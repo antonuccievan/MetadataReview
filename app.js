@@ -598,7 +598,9 @@ function renderTable() {
   state.filteredRows = reportedRows;
   state.findingsByRowId = findingsByRowId;
 
-  updateScorecardButtons(passCount, failCount);
+  if (state.reportType === "spell") {
+    updateScorecardButtons(passCount, failCount);
+  }
 
   const rowsToRender = reportedRows;
   const visibleCount = rowsToRender.length;
