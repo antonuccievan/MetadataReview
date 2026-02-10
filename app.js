@@ -1,17 +1,34 @@
 const THEME_STORAGE_KEY = "metadata-review-theme";
 
+const CASE_MODES = {
+  proper: "Proper Case",
+  upper: "Upper Case",
+  lower: "Lower Case"
+};
+
+const BASIC_DICTIONARY_WORDS = new Set([
+  "a","about","above","across","after","again","against","all","also","am","an","and","any","are","as","at","be","been","before","being","below","between","both","but","by",
+  "can","case","check","child","column","columns","company","data","date","description","document","documents","down","each","email","entry","error","errors","file","files","for","from","group","groups","has","have","he","her","here","his","how","i","id","if","in","into","is","it","its","item","items","job","key","keys","label","line","list","lower","made","may","metadata","mode","name","new","no","not","number","of","on","one","or","order","other","our","out","over","parent","path","proper","record","records","report","reports","review","row","rows","run","same","select","sheet","should","show","simple","spell","start","status","string","table","text","that","the","their","them","there","these","this","to","type","under","upper","up","use","value","values","was","we","when","where","which","with","work","workflow","you","your"
+]);
+
 const state = {
   workbook: null,
   dataRows: [],
   rows: [],
   headers: [],
+  sourceHeaders: [],
   collapsed: new Set(),
   hierarchyRoots: [],
   loading: false,
   headerRowNumber: null,
   headerStartColumnNumber: 2,
   parentColumnNumber: 3,
-  childColumnNumber: 4
+  childColumnNumber: 4,
+  reportType: "none",
+  reportCaseMode: "proper",
+  reportColumns: new Set(),
+  filteredRows: [],
+  findingsByRowId: new Map()
 };
 
 const fileInput = document.getElementById("fileInput");
@@ -23,6 +40,10 @@ const collapseAllBtn = document.getElementById("collapseAllBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
+const reportSelect = document.getElementById("reportSelect");
+const caseModeSelect = document.getElementById("caseModeSelect");
+const caseModeWrap = document.getElementById("caseModeWrap");
+const reportColumnChecklist = document.getElementById("reportColumnChecklist");
 
 fileInput?.addEventListener("change", handleFileUpload);
 sheetSelect?.addEventListener("change", loadSheetRows);
@@ -37,6 +58,22 @@ collapseAllBtn?.addEventListener("click", () => {
 });
 parentColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
+reportSelect?.addEventListener("change", handleReportTypeChange);
+caseModeSelect?.addEventListener("change", handleCaseModeChange);
+
+reportColumnChecklist?.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+  const columnIndex = Number(target.getAttribute("data-column-index"));
+  if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= state.sourceHeaders.length) return;
+  const header = state.sourceHeaders[columnIndex];
+  if (target.checked) {
+    state.reportColumns.add(header);
+  } else {
+    state.reportColumns.delete(header);
+  }
+  renderTable();
+});
 
 themeToggleBtn?.addEventListener("click", toggleTheme);
 initializeTheme();
@@ -161,6 +198,61 @@ function populateHierarchyColumnSelects(sourceHeaders) {
   childColumnSelect.disabled = false;
 }
 
+function populateReportColumns(sourceHeaders) {
+  if (!reportColumnChecklist || !reportSelect || !caseModeSelect) {
+    throw new Error("Report controls are unavailable in this page layout.");
+  }
+
+  if (sourceHeaders.length === 0) {
+    reportColumnChecklist.innerHTML = '<div class="empty">No report columns available.</div>';
+    reportSelect.disabled = true;
+    caseModeSelect.disabled = true;
+    return;
+  }
+
+  reportSelect.disabled = false;
+  caseModeSelect.disabled = false;
+
+  if (state.reportColumns.size === 0) {
+    sourceHeaders.forEach((header) => state.reportColumns.add(header));
+  }
+
+  reportColumnChecklist.innerHTML = sourceHeaders
+    .map(
+      (header, index) => `
+      <label class="checkbox-item">
+        <input type="checkbox" data-column-index="${index}" ${state.reportColumns.has(header) ? "checked" : ""} />
+        <span>${escapeHtml(header)}</span>
+      </label>
+    `
+    )
+    .join("");
+
+  reportSelect.value = state.reportType;
+  caseModeSelect.value = state.reportCaseMode;
+  syncReportParamVisibility();
+}
+
+function syncReportParamVisibility() {
+  if (!caseModeWrap || !caseModeSelect) return;
+  const showCase = state.reportType === "case";
+  caseModeWrap.hidden = !showCase;
+  caseModeSelect.disabled = !showCase;
+}
+
+function handleReportTypeChange() {
+  if (!reportSelect) return;
+  state.reportType = reportSelect.value;
+  syncReportParamVisibility();
+  renderTable();
+}
+
+function handleCaseModeChange() {
+  if (!caseModeSelect) return;
+  state.reportCaseMode = caseModeSelect.value;
+  renderTable();
+}
+
 function handleHierarchyColumnChange() {
   if (state.dataRows.length === 0) return;
 
@@ -239,7 +331,7 @@ async function loadSheetRows() {
 
     const sourceHeaders = headerRow
       .slice(headerStartColumnIndex)
-      .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
+      .map((h, i) => String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`);
 
     if (sourceHeaders.length === 0) {
       setLoading(false);
@@ -247,8 +339,14 @@ async function loadSheetRows() {
       return;
     }
 
+    state.sourceHeaders = sourceHeaders;
     state.headers = ["Hierarchy", ...sourceHeaders];
+
+    const missingReportColumns = [...state.reportColumns].filter((header) => !sourceHeaders.includes(header));
+    missingReportColumns.forEach((header) => state.reportColumns.delete(header));
+
     populateHierarchyColumnSelects(sourceHeaders);
+    populateReportColumns(sourceHeaders);
 
     const dataRows = grid.slice(headerRowIndex + 1).map((row, index) => {
       const mapped = {};
@@ -384,6 +482,95 @@ function rebuildHierarchyFromParentChild() {
   renderTable();
 }
 
+function tokenize(value) {
+  return String(value ?? "")
+    .split(/[^A-Za-z']+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function looksMisspelled(token) {
+  if (!token) return false;
+  if (/\d/.test(token)) return false;
+  if (token.length <= 2) return false;
+  if (/^[A-Z]{2,6}$/.test(token)) return false;
+
+  const cleaned = token.replace(/^'+|'+$/g, "").toLowerCase();
+  if (cleaned.length <= 2) return false;
+  return !BASIC_DICTIONARY_WORDS.has(cleaned);
+}
+
+function classifyCase(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "none";
+
+  const hasLetter = /[A-Za-z]/.test(text);
+  if (!hasLetter) return "none";
+  if (text === text.toUpperCase()) return "upper";
+  if (text === text.toLowerCase()) return "lower";
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const isProper = words.length > 0 && words.every((word) => {
+    const lettersOnly = word.replace(/[^A-Za-z]/g, "");
+    if (!lettersOnly) return true;
+    return lettersOnly[0] === lettersOnly[0].toUpperCase() && lettersOnly.slice(1) === lettersOnly.slice(1).toLowerCase();
+  });
+
+  return isProper ? "proper" : "mixed";
+}
+
+function evaluateSpellRow(entry, selectedColumns) {
+  const issues = [];
+  selectedColumns.forEach((header) => {
+    const value = String(entry.row[header] ?? "");
+    if (!value.trim()) return;
+
+    const misspelled = [...new Set(tokenize(value).filter(looksMisspelled))];
+    if (misspelled.length > 0) {
+      issues.push(`${header}: ${misspelled.join(", ")}`);
+    }
+  });
+
+  return issues;
+}
+
+function evaluateCaseRow(entry, selectedColumns) {
+  const issues = [];
+
+  selectedColumns.forEach((header) => {
+    const value = String(entry.row[header] ?? "");
+    if (!value.trim()) return;
+
+    const detected = classifyCase(value);
+    if (detected !== state.reportCaseMode) {
+      const label = CASE_MODES[detected] || "Mixed Case";
+      issues.push(`${header}: ${label}`);
+    }
+  });
+
+  return issues;
+}
+
+function applyReportFilter(rows) {
+  const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
+  if (state.reportType === "none" || selectedColumns.length === 0) {
+    return { rows, findingsByRowId: new Map() };
+  }
+
+  const findingsByRowId = new Map();
+  const filteredRows = [];
+
+  rows.forEach((entry) => {
+    const issues = state.reportType === "spell" ? evaluateSpellRow(entry, selectedColumns) : evaluateCaseRow(entry, selectedColumns);
+    if (issues.length > 0) {
+      filteredRows.push(entry);
+      findingsByRowId.set(entry.id, issues);
+    }
+  });
+
+  return { rows: filteredRows, findingsByRowId };
+}
+
 function renderTable() {
   const rowById = new Map(state.rows.map((r) => [r.id, r]));
 
@@ -400,21 +587,34 @@ function renderTable() {
     entry.isVisible = !hidden;
   });
 
-  const visibleCount = state.rows.filter((r) => r.isVisible).length;
-  const maxDepth = Math.max(...state.rows.map((r) => r.level), 0);
+  const visibleRows = state.rows.filter((r) => r.isVisible);
+  const { rows: reportedRows, findingsByRowId } = applyReportFilter(visibleRows);
+  state.filteredRows = reportedRows;
+  state.findingsByRowId = findingsByRowId;
+
+  const rowsToRender = reportedRows;
+  const visibleCount = rowsToRender.length;
+  const maxDepth = Math.max(...rowsToRender.map((r) => r.level), 0);
+  const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
+  const reportSummary =
+    state.reportType === "none"
+      ? "Off"
+      : `${state.reportType === "spell" ? "Spell check" : `Case check (${CASE_MODES[state.reportCaseMode]})`} · ${selectedColumns.length} column(s)`;
 
   stats.innerHTML = `
     <span>Headers: <strong>row ${state.headerRowNumber ?? "?"}</strong></span>
     <span>Total rows: <strong>${state.rows.length}</strong></span>
-    <span>Visible rows: <strong>${visibleCount}</strong></span>
-    <span>Max depth: <strong>${maxDepth + 1}</strong></span>
+    <span>Shown rows: <strong>${visibleCount}</strong></span>
+    <span>Max depth: <strong>${rowsToRender.length > 0 ? maxDepth + 1 : 0}</strong></span>
     <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
+    <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const headerCells = state.headers.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
   const sourceHeaders = state.headers.slice(1);
+  const headerSet = state.reportType === "none" ? state.headers : ["Hierarchy", "Report Findings", ...sourceHeaders];
+  const headerCells = headerSet.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
 
-  const bodyRows = state.rows
+  const bodyRows = rowsToRender
     .map((entry) => {
       const hierarchyCell = `
         <td class="sticky-col">
@@ -434,18 +634,21 @@ function renderTable() {
         </td>
       `;
 
-      const rowCells = sourceHeaders
-        .map((header) => `<td>${escapeHtml(String(entry.row[header] ?? ""))}</td>`)
-        .join("");
+      const findingCell =
+        state.reportType === "none"
+          ? ""
+          : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      return `<tr class="${entry.isVisible ? "" : "hidden"}">${hierarchyCell}${rowCells}</tr>`;
+      const rowCells = sourceHeaders.map((header) => `<td>${escapeHtml(String(entry.row[header] ?? ""))}</td>`).join("");
+
+      return `<tr>${hierarchyCell}${findingCell}${rowCells}</tr>`;
     })
     .join("");
 
   tableWrap.innerHTML = `
     <table>
       <thead><tr>${headerCells}</tr></thead>
-      <tbody>${bodyRows}</tbody>
+      <tbody>${bodyRows || `<tr><td colspan="${headerSet.length}"><div class="empty">No rows match the active report filters.</div></td></tr>`}</tbody>
     </table>
   `;
 
