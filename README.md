@@ -5,9 +5,9 @@ A lightweight browser interface for reviewing metadata exported to Excel.
 ## Features
 
 - Upload `.xlsx` or `.xls` files directly in the browser.
-- Choose workbook sheet and hierarchy column.
+- Choose workbook sheet and automatically treat row 1 as header columns.
 - Recreate your spreadsheet as an interactive table.
-- Expand/collapse parent-child rows inferred from indentation in the hierarchy column.
+- Expand/collapse Excel-style parent-child groupings inferred from indentation in the first column.
 - See quick depth and visibility stats while exploring.
 
 ## Run locally
@@ -22,10 +22,10 @@ Then open: `http://localhost:8000`
 
 ## Hierarchy parsing
 
-The hierarchy level for each row is inferred from the selected hierarchy column using:
+The hierarchy level for each row is inferred from indentation in the first column using:
 
 1. Leading tab characters (`\t`).
 2. Leading spaces (2 spaces ≈ 1 level).
 3. Repeated bullets/punctuation prefixes (`.`, `-`, `*`, `•`) as a fallback.
 
-You can switch hierarchy columns at any time to re-parse the tree.
+Row 1 is always interpreted as headers, and the remaining rows become groupable data rows.

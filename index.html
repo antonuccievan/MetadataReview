@@ -202,7 +202,7 @@
   <main class="container">
     <h1>Metadata Review Interface</h1>
     <p class="subheading">
-      Upload an Excel file, select the hierarchy column, and explore parent-child rows with expand/collapse controls.
+      Upload an Excel file to parse row 1 as headers and build expandable groupings from indentation in the first column.
     </p>
 
     <section class="panel">
@@ -217,18 +217,12 @@
             <option value="">Select a sheet</option>
           </select>
         </div>
-        <div>
-          <label for="hierarchySelect">Hierarchy column</label>
-          <select id="hierarchySelect" disabled>
-            <option value="">Select hierarchy column</option>
-          </select>
-        </div>
       </div>
 
       <div class="button-row">
         <button id="expandAllBtn" disabled>Expand all</button>
-        <button id="collapseAllBtn" disabled>Collapse to roots</button>
-        <button id="resetBtn" disabled>Reset parser</button>
+        <button id="collapseAllBtn" disabled>Collapse groups</button>
+        <button id="resetBtn" disabled>Rebuild groups</button>
       </div>
 
       <div class="stats" id="stats"></div>
