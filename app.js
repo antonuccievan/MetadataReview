@@ -47,8 +47,9 @@ async function handleFileUpload(event) {
   });
   sheetSelect.disabled = false;
 
-  if (state.workbook.SheetNames.length === 1) {
-    sheetSelect.value = state.workbook.SheetNames[0];
+  const firstSheet = state.workbook.SheetNames[0];
+  if (firstSheet) {
+    sheetSelect.value = firstSheet;
     loadSheetRows();
   }
 }
@@ -186,15 +187,18 @@ function renderTable() {
             return `<td>${escapeHtml(value)}</td>`;
           }
 
-          const twisty = entry.hasChildren
-            ? `<button class="twisty" data-id="${entry.id}" aria-label="Toggle row">${state.collapsed.has(entry.id) ? "▶" : "▼"}</button>`
+          const controls = entry.hasChildren
+            ? `
+              <button class="twisty" data-id="${entry.id}" data-action="expand" aria-label="Expand row">+</button>
+              <button class="twisty" data-id="${entry.id}" data-action="collapse" aria-label="Collapse row">−</button>
+            `
             : '<span class="twisty placeholder">•</span>';
 
           return `
             <td>
               <div class="hierarchy-cell">
                 <span class="indent-guide" style="--indent:${entry.level * 18}px"></span>
-                ${twisty}
+                ${controls}
                 <span>${escapeHtml(value.trimStart())}</span>
                 <span class="pill">L${entry.level + 1}</span>
               </div>
@@ -216,9 +220,14 @@ function renderTable() {
   tableWrap.querySelectorAll(".twisty[data-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.getAttribute("data-id");
+      const action = button.getAttribute("data-action");
       if (!id) return;
 
-      if (state.collapsed.has(id)) {
+      if (action === "expand") {
+        state.collapsed.delete(id);
+      } else if (action === "collapse") {
+        state.collapsed.add(id);
+      } else if (state.collapsed.has(id)) {
         state.collapsed.delete(id);
       } else {
         state.collapsed.add(id);
