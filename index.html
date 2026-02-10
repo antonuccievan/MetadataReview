@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Metadata Review Interface</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #dbeafe;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #020617;
+        --surface: #0b1120;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #1e293b;
+        --accent: #60a5fa;
+        --accent-soft: #172554;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1rem 3rem;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 0.5rem;
+    }
+
+    .subheading {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .upload-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: end;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    input[type="file"],
+    select,
+    button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.7rem;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .button-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    button {
+      width: auto;
+      cursor: pointer;
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    table {
+      border-collapse: collapse;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      z-index: 2;
+      border-bottom: 2px solid var(--border);
+    }
+
+    th,
+    td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      vertical-align: top;
+    }
+
+    tr.hidden {
+      display: none;
+    }
+
+    .hierarchy-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .twisty {
+      width: 1.5rem;
+      height: 1.5rem;
+      display: inline-grid;
+      place-content: center;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+      color: var(--text);
+      flex: 0 0 auto;
+    }
+
+    .twisty.placeholder {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .indent-guide {
+      width: var(--indent, 0px);
+      flex: 0 0 auto;
+    }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: color-mix(in oklab, var(--surface) 85%, var(--accent));
+      border: 1px solid var(--border);
+      padding: 0.15rem 0.4rem;
+      border-radius: 999px;
+      margin-left: 0.4rem;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Metadata Review Interface</h1>
+    <p class="subheading">
+      Upload an Excel file, select the hierarchy column, and explore parent-child rows with expand/collapse controls.
+    </p>
+
+    <section class="panel">
+      <div class="upload-grid">
+        <div>
+          <label for="fileInput">Excel file (.xlsx / .xls)</label>
+          <input id="fileInput" type="file" accept=".xlsx,.xls" />
+        </div>
+        <div>
+          <label for="sheetSelect">Sheet</label>
+          <select id="sheetSelect" disabled>
+            <option value="">Select a sheet</option>
+          </select>
+        </div>
+        <div>
+          <label for="hierarchySelect">Hierarchy column</label>
+          <select id="hierarchySelect" disabled>
+            <option value="">Select hierarchy column</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="expandAllBtn" disabled>Expand all</button>
+        <button id="collapseAllBtn" disabled>Collapse to roots</button>
+        <button id="resetBtn" disabled>Reset parser</button>
+      </div>
+
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <section class="table-wrap" id="tableWrap">
+      <div class="empty">Upload a workbook to begin.</div>
+    </section>
+  </main>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
