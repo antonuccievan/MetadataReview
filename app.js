@@ -20,7 +20,6 @@ const tableWrap = document.getElementById("tableWrap");
 const stats = document.getElementById("stats");
 const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
-const resetBtn = document.getElementById("resetBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
@@ -35,10 +34,6 @@ collapseAllBtn.addEventListener("click", () => {
   state.collapsed = new Set(state.rows.filter((r) => r.hasChildren).map((r) => r.id));
   state.rows.filter((r) => r.level === 0).forEach((r) => state.collapsed.delete(r.id));
   renderTable();
-});
-resetBtn.addEventListener("click", () => {
-  if (state.rows.length === 0) return;
-  rebuildHierarchyFromParentChild();
 });
 parentColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect.addEventListener("change", handleHierarchyColumnChange);
@@ -261,7 +256,6 @@ async function loadSheetRows() {
 
     expandAllBtn.disabled = false;
     collapseAllBtn.disabled = false;
-    resetBtn.disabled = false;
 
     rebuildHierarchyFromParentChild();
     runQuery();
@@ -371,7 +365,6 @@ function rebuildHierarchyFromParentChild() {
 
   expandAllBtn.disabled = false;
   collapseAllBtn.disabled = false;
-  resetBtn.disabled = false;
 
   setLoading(false);
   renderTable();
