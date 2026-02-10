@@ -241,10 +241,6 @@ function populateReportColumns(sourceHeaders) {
 
   reportSelect.disabled = false;
 
-  if (state.reportColumns.size === 0) {
-    sourceHeaders.forEach((header) => state.reportColumns.add(header));
-  }
-
   spellColumnSelect.innerHTML = sourceHeaders
     .map((header, index) => `<option value="${index}" ${state.reportColumns.has(header) ? "selected" : ""}>${escapeHtml(header)}</option>`)
     .join("");
@@ -258,13 +254,31 @@ function syncReportParamVisibility() {
   const showSpell = state.reportType === "spell";
   spellOptionsWrap.hidden = !showSpell;
   spellScorecard.hidden = !showSpell;
+  if (spellColumnSelect) {
+    spellColumnSelect.disabled = !showSpell;
+  }
 }
 
 function handleReportTypeChange() {
   if (!reportSelect) return;
   state.reportType = reportSelect.value;
-  if (state.reportType !== "spell") {
+  if (state.reportType === "spell") {
+    if (spellColumnSelect && state.reportColumns.size === 0) {
+      [...spellColumnSelect.options].forEach((option) => {
+        const columnIndex = Number(option.value);
+        if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= state.sourceHeaders.length) return;
+        option.selected = true;
+        state.reportColumns.add(state.sourceHeaders[columnIndex]);
+      });
+    }
+  } else {
     state.spellStatusFilter = "all";
+    state.reportColumns.clear();
+    if (spellColumnSelect) {
+      [...spellColumnSelect.options].forEach((option) => {
+        option.selected = false;
+      });
+    }
   }
   syncReportParamVisibility();
   renderTable();
