@@ -9,7 +9,6 @@ const state = {
 
 const fileInput = document.getElementById("fileInput");
 const sheetSelect = document.getElementById("sheetSelect");
-const hierarchySelect = document.getElementById("hierarchySelect");
 const tableWrap = document.getElementById("tableWrap");
 const stats = document.getElementById("stats");
 const expandAllBtn = document.getElementById("expandAllBtn");
@@ -18,7 +17,6 @@ const resetBtn = document.getElementById("resetBtn");
 
 fileInput.addEventListener("change", handleFileUpload);
 sheetSelect.addEventListener("change", loadSheetRows);
-hierarchySelect.addEventListener("change", rebuildTreeFromCurrentRows);
 expandAllBtn.addEventListener("click", () => {
   state.collapsed.clear();
   renderTable();
@@ -91,36 +89,15 @@ function loadSheetRows() {
     isVisible: true
   }));
 
-  buildHierarchyColumnSelect();
-}
-
-function buildHierarchyColumnSelect() {
-  hierarchySelect.innerHTML = '<option value="">Select hierarchy column</option>';
-  state.headers.forEach((header) => {
-    const option = document.createElement("option");
-    option.value = header;
-    option.textContent = header;
-    hierarchySelect.append(option);
-  });
-  hierarchySelect.disabled = false;
-
-  const autoDetected = autoDetectHierarchyColumn(state.headers);
-  hierarchySelect.value = autoDetected || state.headers[0] || "";
-
   rebuildTreeFromCurrentRows();
 }
 
-function autoDetectHierarchyColumn(headers) {
-  const matches = headers.filter((header) => /hierarchy|tree|path|taxonomy|name|title/i.test(header));
-  return matches[0] || null;
-}
-
 function rebuildTreeFromCurrentRows() {
-  state.hierarchyColumn = hierarchySelect.value;
+  state.hierarchyColumn = state.headers[0] || "Column 1";
   state.collapsed.clear();
 
-  if (!state.hierarchyColumn) {
-    tableWrap.innerHTML = '<div class="empty">Please choose a hierarchy column.</div>';
+  if (!state.hierarchyColumn || state.headers.length === 0) {
+    tableWrap.innerHTML = '<div class="empty">Unable to parse headers from the first row.</div>';
     return;
   }
 
@@ -191,10 +168,11 @@ function renderTable() {
   const maxDepth = Math.max(...state.rows.map((r) => r.level), 0);
 
   stats.innerHTML = `
+    <span>Headers: <strong>row 1</strong></span>
     <span>Total rows: <strong>${state.rows.length}</strong></span>
     <span>Visible rows: <strong>${visibleCount}</strong></span>
     <span>Max depth: <strong>${maxDepth + 1}</strong></span>
-    <span>Hierarchy: <strong>${state.hierarchyColumn}</strong></span>
+    <span>Grouping source: <strong>indent in ${state.hierarchyColumn}</strong></span>
   `;
 
   const headerCells = state.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
