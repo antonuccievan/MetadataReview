@@ -121,6 +121,46 @@
       margin-top: 0.75rem;
     }
 
+    .report-config {
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .report-params-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.2rem;
+    }
+
+    .checkbox-list {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-height: 180px;
+      overflow: auto;
+      padding: 0.45rem;
+      background: color-mix(in oklab, var(--surface) 94%, var(--accent));
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.35rem;
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+
+    .checkbox-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .checkbox-item input {
+      width: auto;
+      margin: 0;
+    }
+
     button {
       width: auto;
       cursor: pointer;
@@ -310,6 +350,31 @@
       <div class="button-row">
         <button id="expandAllBtn" disabled>Expand all</button>
         <button id="collapseAllBtn" disabled>Collapse groups</button>
+      </div>
+
+      <div class="report-config">
+        <div class="report-params-grid">
+          <div>
+            <label for="reportSelect">Report</label>
+            <select id="reportSelect" disabled>
+              <option value="none">No report</option>
+              <option value="spell">Spell check</option>
+              <option value="case">Case check</option>
+            </select>
+          </div>
+          <div id="caseModeWrap" hidden>
+            <label for="caseModeSelect">Case mode</label>
+            <select id="caseModeSelect" disabled>
+              <option value="proper">Proper Case</option>
+              <option value="upper">Upper Case</option>
+              <option value="lower">Lower Case</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:0.75rem">
+          <label>Report columns (multi-select)</label>
+          <div id="reportColumnChecklist" class="checkbox-list" aria-label="Report columns"></div>
+        </div>
       </div>
 
       <div class="stats" id="stats"></div>
