@@ -1,11 +1,5 @@
 const THEME_STORAGE_KEY = "metadata-review-theme";
 
-const CASE_MODES = {
-  proper: "Proper Case",
-  upper: "Upper Case",
-  lower: "Lower Case"
-};
-
 const BASIC_DICTIONARY_WORDS = new Set([
   "a","about","above","across","after","again","against","all","also","am","an","and","any","are","as","at","be","been","before","being","below","between","both","but","by",
   "can","case","check","child","column","columns","company","data","date","description","document","documents","down","each","email","entry","error","errors","file","files","for","from","group","groups","has","have","he","her","here","his","how","i","id","if","in","into","is","it","its","item","items","job","key","keys","label","line","list","lower","made","may","metadata","mode","name","new","no","not","number","of","on","one","or","order","other","our","out","over","parent","path","proper","record","records","report","reports","review","row","rows","run","same","select","sheet","should","show","simple","spell","start","status","string","table","text","that","the","their","them","there","these","this","to","type","under","upper","up","use","value","values","was","we","when","where","which","with","work","workflow","you","your"
@@ -24,9 +18,9 @@ const state = {
   headerStartColumnNumber: 2,
   parentColumnNumber: 3,
   childColumnNumber: 4,
-  reportType: "none",
-  reportCaseMode: "proper",
+  reportType: "review",
   reportColumns: new Set(),
+  spellStatusFilter: "all",
   filteredRows: [],
   findingsByRowId: new Map()
 };
@@ -41,9 +35,12 @@ const themeToggleBtn = document.getElementById("themeToggleBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
 const reportSelect = document.getElementById("reportSelect");
-const caseModeSelect = document.getElementById("caseModeSelect");
-const caseModeWrap = document.getElementById("caseModeWrap");
-const reportColumnChecklist = document.getElementById("reportColumnChecklist");
+const spellOptionsWrap = document.getElementById("spellOptionsWrap");
+const spellColumnSelect = document.getElementById("spellColumnSelect");
+const spellScorecard = document.getElementById("spellScorecard");
+const scoreAllBtn = document.getElementById("scoreAllBtn");
+const scorePassBtn = document.getElementById("scorePassBtn");
+const scoreFailBtn = document.getElementById("scoreFailBtn");
 
 fileInput?.addEventListener("change", handleFileUpload);
 sheetSelect?.addEventListener("change", loadSheetRows);
@@ -59,21 +56,54 @@ collapseAllBtn?.addEventListener("click", () => {
 parentColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 reportSelect?.addEventListener("change", handleReportTypeChange);
-caseModeSelect?.addEventListener("change", handleCaseModeChange);
-
-reportColumnChecklist?.addEventListener("change", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
-  const columnIndex = Number(target.getAttribute("data-column-index"));
-  if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= state.sourceHeaders.length) return;
-  const header = state.sourceHeaders[columnIndex];
-  if (target.checked) {
-    state.reportColumns.add(header);
-  } else {
-    state.reportColumns.delete(header);
-  }
+spellColumnSelect?.addEventListener("change", () => {
+  const selectedOptions = [...spellColumnSelect.selectedOptions];
+  state.reportColumns.clear();
+  selectedOptions.forEach((option) => {
+    const columnIndex = Number(option.value);
+    if (Number.isInteger(columnIndex) && columnIndex >= 0 && columnIndex < state.sourceHeaders.length) {
+      state.reportColumns.add(state.sourceHeaders[columnIndex]);
+    }
+  });
   renderTable();
 });
+
+function setSpellStatusFilter(nextFilter) {
+  state.spellStatusFilter = nextFilter;
+  renderTable();
+}
+
+scoreAllBtn?.addEventListener("click", () => setSpellStatusFilter("all"));
+scorePassBtn?.addEventListener("click", () => setSpellStatusFilter("pass"));
+scoreFailBtn?.addEventListener("click", () => setSpellStatusFilter("fail"));
+
+function updateScorecardButtons(passCount, failCount) {
+  if (!scoreAllBtn || !scorePassBtn || !scoreFailBtn) return;
+  scoreAllBtn.textContent = `All: ${passCount + failCount}`;
+  scorePassBtn.textContent = `Pass: ${passCount}`;
+  scoreFailBtn.textContent = `Fail: ${failCount}`;
+
+  scoreAllBtn.classList.toggle("active", state.spellStatusFilter === "all");
+  scorePassBtn.classList.toggle("active", state.spellStatusFilter === "pass");
+  scoreFailBtn.classList.toggle("active", state.spellStatusFilter === "fail");
+}
+
+function isMisspelledToken(token) {
+  return looksMisspelled(token);
+}
+
+function markMisspelledWords(input) {
+  const text = String(input ?? "");
+  const parts = text.split(/(\b[A-Za-z']+\b)/g);
+  return parts
+    .map((part) => {
+      if (/^\b[A-Za-z']+\b$/.test(part) && isMisspelledToken(part)) {
+        return `<span class="misspelled-token">${escapeHtml(part)}</span>`;
+      }
+      return escapeHtml(part);
+    })
+    .join("");
+}
 
 themeToggleBtn?.addEventListener("click", toggleTheme);
 initializeTheme();
@@ -199,57 +229,44 @@ function populateHierarchyColumnSelects(sourceHeaders) {
 }
 
 function populateReportColumns(sourceHeaders) {
-  if (!reportColumnChecklist || !reportSelect || !caseModeSelect) {
+  if (!spellColumnSelect || !reportSelect) {
     throw new Error("Report controls are unavailable in this page layout.");
   }
 
   if (sourceHeaders.length === 0) {
-    reportColumnChecklist.innerHTML = '<div class="empty">No report columns available.</div>';
+    spellColumnSelect.innerHTML = "";
     reportSelect.disabled = true;
-    caseModeSelect.disabled = true;
     return;
   }
 
   reportSelect.disabled = false;
-  caseModeSelect.disabled = false;
 
   if (state.reportColumns.size === 0) {
     sourceHeaders.forEach((header) => state.reportColumns.add(header));
   }
 
-  reportColumnChecklist.innerHTML = sourceHeaders
-    .map(
-      (header, index) => `
-      <label class="checkbox-item">
-        <input type="checkbox" data-column-index="${index}" ${state.reportColumns.has(header) ? "checked" : ""} />
-        <span>${escapeHtml(header)}</span>
-      </label>
-    `
-    )
+  spellColumnSelect.innerHTML = sourceHeaders
+    .map((header, index) => `<option value="${index}" ${state.reportColumns.has(header) ? "selected" : ""}>${escapeHtml(header)}</option>`)
     .join("");
 
   reportSelect.value = state.reportType;
-  caseModeSelect.value = state.reportCaseMode;
   syncReportParamVisibility();
 }
 
 function syncReportParamVisibility() {
-  if (!caseModeWrap || !caseModeSelect) return;
-  const showCase = state.reportType === "case";
-  caseModeWrap.hidden = !showCase;
-  caseModeSelect.disabled = !showCase;
+  if (!spellOptionsWrap || !spellScorecard) return;
+  const showSpell = state.reportType === "spell";
+  spellOptionsWrap.hidden = !showSpell;
+  spellScorecard.hidden = !showSpell;
 }
 
 function handleReportTypeChange() {
   if (!reportSelect) return;
   state.reportType = reportSelect.value;
+  if (state.reportType !== "spell") {
+    state.spellStatusFilter = "all";
+  }
   syncReportParamVisibility();
-  renderTable();
-}
-
-function handleCaseModeChange() {
-  if (!caseModeSelect) return;
-  state.reportCaseMode = caseModeSelect.value;
   renderTable();
 }
 
@@ -500,25 +517,6 @@ function looksMisspelled(token) {
   return !BASIC_DICTIONARY_WORDS.has(cleaned);
 }
 
-function classifyCase(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return "none";
-
-  const hasLetter = /[A-Za-z]/.test(text);
-  if (!hasLetter) return "none";
-  if (text === text.toUpperCase()) return "upper";
-  if (text === text.toLowerCase()) return "lower";
-
-  const words = text.split(/\s+/).filter(Boolean);
-  const isProper = words.length > 0 && words.every((word) => {
-    const lettersOnly = word.replace(/[^A-Za-z]/g, "");
-    if (!lettersOnly) return true;
-    return lettersOnly[0] === lettersOnly[0].toUpperCase() && lettersOnly.slice(1) === lettersOnly.slice(1).toLowerCase();
-  });
-
-  return isProper ? "proper" : "mixed";
-}
-
 function evaluateSpellRow(entry, selectedColumns) {
   const issues = [];
   selectedColumns.forEach((header) => {
@@ -534,41 +532,44 @@ function evaluateSpellRow(entry, selectedColumns) {
   return issues;
 }
 
-function evaluateCaseRow(entry, selectedColumns) {
-  const issues = [];
-
-  selectedColumns.forEach((header) => {
-    const value = String(entry.row[header] ?? "");
-    if (!value.trim()) return;
-
-    const detected = classifyCase(value);
-    if (detected !== state.reportCaseMode) {
-      const label = CASE_MODES[detected] || "Mixed Case";
-      issues.push(`${header}: ${label}`);
-    }
-  });
-
-  return issues;
-}
-
 function applyReportFilter(rows) {
   const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  if (state.reportType === "none" || selectedColumns.length === 0) {
-    return { rows, findingsByRowId: new Map() };
+  if (state.reportType !== "spell" || selectedColumns.length === 0) {
+    return {
+      rows,
+      findingsByRowId: new Map(),
+      statusByRowId: new Map(),
+      passCount: rows.length,
+      failCount: 0,
+      selectedColumns
+    };
   }
 
   const findingsByRowId = new Map();
-  const filteredRows = [];
+  const statusByRowId = new Map();
+  let passCount = 0;
+  let failCount = 0;
 
   rows.forEach((entry) => {
-    const issues = state.reportType === "spell" ? evaluateSpellRow(entry, selectedColumns) : evaluateCaseRow(entry, selectedColumns);
+    const issues = evaluateSpellRow(entry, selectedColumns);
+    const status = issues.length > 0 ? "Fail" : "Pass";
+    statusByRowId.set(entry.id, status);
     if (issues.length > 0) {
-      filteredRows.push(entry);
       findingsByRowId.set(entry.id, issues);
+      failCount += 1;
+    } else {
+      passCount += 1;
     }
   });
 
-  return { rows: filteredRows, findingsByRowId };
+  const filteredRows = rows.filter((entry) => {
+    const status = statusByRowId.get(entry.id);
+    if (state.spellStatusFilter === "pass") return status === "Pass";
+    if (state.spellStatusFilter === "fail") return status === "Fail";
+    return true;
+  });
+
+  return { rows: filteredRows, findingsByRowId, statusByRowId, passCount, failCount, selectedColumns };
 }
 
 function renderTable() {
@@ -588,18 +589,16 @@ function renderTable() {
   });
 
   const visibleRows = state.rows.filter((r) => r.isVisible);
-  const { rows: reportedRows, findingsByRowId } = applyReportFilter(visibleRows);
+  const { rows: reportedRows, findingsByRowId, statusByRowId, passCount, failCount, selectedColumns } = applyReportFilter(visibleRows);
   state.filteredRows = reportedRows;
   state.findingsByRowId = findingsByRowId;
+
+  updateScorecardButtons(passCount, failCount);
 
   const rowsToRender = reportedRows;
   const visibleCount = rowsToRender.length;
   const maxDepth = Math.max(...rowsToRender.map((r) => r.level), 0);
-  const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  const reportSummary =
-    state.reportType === "none"
-      ? "Off"
-      : `${state.reportType === "spell" ? "Spell check" : `Case check (${CASE_MODES[state.reportCaseMode]})`} · ${selectedColumns.length} column(s)`;
+  const reportSummary = state.reportType === "spell" ? `Spell check · ${selectedColumns.length} column(s)` : "Review";
 
   stats.innerHTML = `
     <span>Headers: <strong>row ${state.headerRowNumber ?? "?"}</strong></span>
@@ -610,8 +609,8 @@ function renderTable() {
     <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const sourceHeaders = state.headers.slice(1);
-  const headerSet = state.reportType === "none" ? state.headers : ["Hierarchy", "Report Findings", ...sourceHeaders];
+  const sourceHeaders = state.reportType === "spell" ? selectedColumns : state.headers.slice(1);
+  const headerSet = state.reportType === "spell" ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders] : state.headers;
   const headerCells = headerSet.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
 
   const bodyRows = rowsToRender
@@ -635,13 +634,23 @@ function renderTable() {
       `;
 
       const findingCell =
-        state.reportType === "none"
+        state.reportType !== "spell"
           ? ""
           : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      const rowCells = sourceHeaders.map((header) => `<td>${escapeHtml(String(entry.row[header] ?? ""))}</td>`).join("");
+      const statusCell = state.reportType !== "spell" ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
 
-      return `<tr>${hierarchyCell}${findingCell}${rowCells}</tr>`;
+      const rowCells = sourceHeaders
+        .map((header) => {
+          const cellValue = String(entry.row[header] ?? "");
+          if (state.reportType === "spell") {
+            return `<td>${markMisspelledWords(cellValue)}</td>`;
+          }
+          return `<td>${escapeHtml(cellValue)}</td>`;
+        })
+        .join("");
+
+      return `<tr>${hierarchyCell}${statusCell}${findingCell}${rowCells}</tr>`;
     })
     .join("");
 
