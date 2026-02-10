@@ -2,6 +2,7 @@ const THEME_STORAGE_KEY = "metadata-review-theme";
 
 const state = {
   workbook: null,
+  dataRows: [],
   rows: [],
   headers: [],
   collapsed: new Set(),
@@ -21,6 +22,7 @@ const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const resetBtn = document.getElementById("resetBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
+const runQueryBtn = document.getElementById("runQueryBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
 
@@ -39,6 +41,7 @@ resetBtn.addEventListener("click", () => {
   if (state.rows.length === 0) return;
   rebuildHierarchyFromParentChild();
 });
+runQueryBtn.addEventListener("click", runQuery);
 parentColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 
@@ -159,7 +162,7 @@ function populateHierarchyColumnSelects(sourceHeaders) {
 }
 
 function handleHierarchyColumnChange() {
-  if (state.rows.length === 0) return;
+  if (state.dataRows.length === 0) return;
 
   const selectedParentColumn = Number(parentColumnSelect.value);
   const selectedChildColumn = Number(childColumnSelect.value);
@@ -169,12 +172,36 @@ function handleHierarchyColumnChange() {
   state.parentColumnNumber = selectedParentColumn;
   state.childColumnNumber = selectedChildColumn;
 
-  state.rows.forEach((entry) => {
-    entry.parentKey = normalizeHierarchyValue(entry.sourceRow[selectedParentColumn - 1]);
-    entry.childKey = normalizeHierarchyValue(entry.sourceRow[selectedChildColumn - 1]);
-    entry.hierarchyLabel = entry.childKey || entry.parentKey || `(Row ${entry.sheetRowNumber})`;
-  });
+  stats.innerHTML = `
+    <span>Preview loaded: <strong>top ${Math.min(10, state.dataRows.length)} rows</strong></span>
+    <span>Total rows available: <strong>${state.dataRows.length}</strong></span>
+    <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
+    <span>Click <strong>Run / Refresh grid</strong> to apply changes.</span>
+  `;
+}
 
+function buildEntries(sourceRows) {
+  return sourceRows.map((entry) => {
+    const parentValue = normalizeHierarchyValue(entry.sourceRow[state.parentColumnNumber - 1]);
+    const childValue = normalizeHierarchyValue(entry.sourceRow[state.childColumnNumber - 1]);
+
+    return {
+      ...entry,
+      level: 0,
+      parentId: null,
+      hasChildren: false,
+      isVisible: true,
+      hierarchyLabel: childValue || parentValue || `(Row ${entry.sheetRowNumber})`,
+      parentKey: parentValue,
+      childKey: childValue,
+      hierarchyPath: ""
+    };
+  });
+}
+
+function runQuery() {
+  if (state.dataRows.length === 0) return;
+  state.rows = buildEntries(state.dataRows);
   rebuildHierarchyFromParentChild();
 }
 
@@ -228,28 +255,31 @@ async function loadSheetRows() {
         mapped[header] = row[colIndex + headerStartColumnIndex] ?? "";
       });
 
-      const parentValue = normalizeHierarchyValue(row[state.parentColumnNumber - 1]);
-      const childValue = normalizeHierarchyValue(row[state.childColumnNumber - 1]);
-
       return {
         id: `row-${index}`,
         originalIndex: index,
         sourceRow: row,
         sheetRowNumber: headerRowIndex + index + 2,
-        row: mapped,
-        level: 0,
-        parentId: null,
-        hasChildren: false,
-        isVisible: true,
-        hierarchyLabel: childValue || parentValue || `(Row ${headerRowIndex + index + 2})`,
-        parentKey: parentValue,
-        childKey: childValue,
-        hierarchyPath: ""
+        row: mapped
       };
     });
 
-    state.rows = dataRows;
+    state.dataRows = dataRows;
+    state.rows = buildEntries(dataRows.slice(0, 10));
+
+    runQueryBtn.disabled = false;
+    expandAllBtn.disabled = false;
+    collapseAllBtn.disabled = false;
+    resetBtn.disabled = false;
+
     rebuildHierarchyFromParentChild();
+
+    stats.innerHTML = `
+      <span>Preview loaded: <strong>top ${Math.min(10, state.dataRows.length)} rows</strong></span>
+      <span>Total rows available: <strong>${state.dataRows.length}</strong></span>
+      <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
+      <span>Click <strong>Run / Refresh grid</strong> to load all rows.</span>
+    `;
   } catch (error) {
     setLoading(false);
     tableWrap.innerHTML = `<div class="empty">Unable to process sheet: ${escapeHtml(error?.message || "unknown error")}</div>`;
@@ -357,6 +387,7 @@ function rebuildHierarchyFromParentChild() {
   expandAllBtn.disabled = false;
   collapseAllBtn.disabled = false;
   resetBtn.disabled = false;
+  runQueryBtn.disabled = false;
 
   setLoading(false);
   renderTable();
