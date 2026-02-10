@@ -22,7 +22,6 @@ const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const resetBtn = document.getElementById("resetBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
-const runQueryBtn = document.getElementById("runQueryBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
 
@@ -41,7 +40,6 @@ resetBtn.addEventListener("click", () => {
   if (state.rows.length === 0) return;
   rebuildHierarchyFromParentChild();
 });
-runQueryBtn.addEventListener("click", runQuery);
 parentColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 
@@ -171,13 +169,7 @@ function handleHierarchyColumnChange() {
 
   state.parentColumnNumber = selectedParentColumn;
   state.childColumnNumber = selectedChildColumn;
-
-  stats.innerHTML = `
-    <span>Preview loaded: <strong>top ${Math.min(10, state.dataRows.length)} rows</strong></span>
-    <span>Total rows available: <strong>${state.dataRows.length}</strong></span>
-    <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
-    <span>Click <strong>Run / Refresh grid</strong> to apply changes.</span>
-  `;
+  runQuery();
 }
 
 function buildEntries(sourceRows) {
@@ -267,19 +259,12 @@ async function loadSheetRows() {
     state.dataRows = dataRows;
     state.rows = buildEntries(dataRows.slice(0, 10));
 
-    runQueryBtn.disabled = false;
     expandAllBtn.disabled = false;
     collapseAllBtn.disabled = false;
     resetBtn.disabled = false;
 
     rebuildHierarchyFromParentChild();
-
-    stats.innerHTML = `
-      <span>Preview loaded: <strong>top ${Math.min(10, state.dataRows.length)} rows</strong></span>
-      <span>Total rows available: <strong>${state.dataRows.length}</strong></span>
-      <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
-      <span>Click <strong>Run / Refresh grid</strong> to load all rows.</span>
-    `;
+    runQuery();
   } catch (error) {
     setLoading(false);
     tableWrap.innerHTML = `<div class="empty">Unable to process sheet: ${escapeHtml(error?.message || "unknown error")}</div>`;
@@ -387,7 +372,6 @@ function rebuildHierarchyFromParentChild() {
   expandAllBtn.disabled = false;
   collapseAllBtn.disabled = false;
   resetBtn.disabled = false;
-  runQueryBtn.disabled = false;
 
   setLoading(false);
   renderTable();
