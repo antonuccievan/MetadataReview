@@ -1,4 +1,6 @@
 const THEME_STORAGE_KEY = "metadata-review-theme";
+const SPELL_DICTIONARY_AFF_URL = "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.aff";
+const SPELL_DICTIONARY_DIC_URL = "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.dic";
 
 const BASIC_DICTIONARY_WORDS = new Set([
   "a","about","above","across","after","again","against","all","also","am","an","and","any","are","as","at","be","been","before","being","below","between","both","but","by",
@@ -22,7 +24,9 @@ const state = {
   reportColumns: new Set(),
   spellStatusFilter: "all",
   filteredRows: [],
-  findingsByRowId: new Map()
+  findingsByRowId: new Map(),
+  spellChecker: null,
+  spellCheckerReady: false
 };
 
 const fileInput = document.getElementById("fileInput");
@@ -107,6 +111,7 @@ function markMisspelledWords(input) {
 
 themeToggleBtn?.addEventListener("click", toggleTheme);
 initializeTheme();
+initializeSpellChecker();
 
 tableWrap?.addEventListener(
   "wheel",
@@ -134,6 +139,33 @@ function setLoading(loading, message = "Processing workbook...") {
 
 function waitForPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function initializeSpellChecker() {
+  if (typeof window.Typo !== "function") {
+    return;
+  }
+
+  try {
+    const [affResponse, dicResponse] = await Promise.all([
+      fetch(SPELL_DICTIONARY_AFF_URL, { cache: "force-cache" }),
+      fetch(SPELL_DICTIONARY_DIC_URL, { cache: "force-cache" })
+    ]);
+
+    if (!affResponse.ok || !dicResponse.ok) {
+      return;
+    }
+
+    const [affData, dicData] = await Promise.all([affResponse.text(), dicResponse.text()]);
+    state.spellChecker = new window.Typo("en_US", affData, dicData, { platform: "any" });
+    state.spellCheckerReady = true;
+
+    if (state.reportType === "spell") {
+      renderTable();
+    }
+  } catch {
+    // Fallback to BASIC_DICTIONARY_WORDS-based checks when network loading fails.
+  }
 }
 
 function initializeTheme() {
@@ -516,10 +548,28 @@ function looksMisspelled(token) {
   if (/\d/.test(token)) return false;
   if (token.length <= 2) return false;
   if (/^[A-Z]{2,6}$/.test(token)) return false;
+  if (/^[A-Za-z]+[A-Z][A-Za-z]*$/.test(token)) return false;
 
-  const cleaned = token.replace(/^'+|'+$/g, "").toLowerCase();
+  const cleaned = token.replace(/^'+|'+$/g, "");
+  const normalized = cleaned.toLowerCase().replace(/'(s|d|ll|re|ve|m|t)$/i, "");
+
+  if (normalized.length <= 2) return false;
+
+  if (state.spellCheckerReady && state.spellChecker) {
+    if (state.spellChecker.check(cleaned) || state.spellChecker.check(normalized)) {
+      return false;
+    }
+
+    const contractionParts = normalized.split("'").filter(Boolean);
+    if (contractionParts.length > 1 && contractionParts.every((part) => state.spellChecker.check(part))) {
+      return false;
+    }
+
+    return true;
+  }
+
   if (cleaned.length <= 2) return false;
-  return !BASIC_DICTIONARY_WORDS.has(cleaned);
+  return !BASIC_DICTIONARY_WORDS.has(normalized);
 }
 
 function evaluateSpellRow(entry, selectedColumns) {
