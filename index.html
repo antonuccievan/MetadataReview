@@ -395,11 +395,12 @@
             <select id="reportSelect" disabled>
               <option value="review">Review</option>
               <option value="spell">Spell check</option>
+              <option value="space">Space Check</option>
             </select>
           </div>
         </div>
         <div id="spellOptionsWrap" style="margin-top:0.75rem" hidden>
-          <label for="spellColumnSelect">Spell check columns (multi-select)</label>
+          <label for="spellColumnSelect" id="reportColumnsLabel">Spell check columns (multi-select)</label>
           <select id="spellColumnSelect" multiple size="6" aria-label="Spell check columns"></select>
         </div>
         <div id="spellScorecard" class="scorecard" hidden>

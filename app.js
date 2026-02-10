@@ -61,6 +61,7 @@ const childColumnSelect = document.getElementById("childColumnSelect");
 const reportSelect = document.getElementById("reportSelect");
 const spellOptionsWrap = document.getElementById("spellOptionsWrap");
 const spellColumnSelect = document.getElementById("spellColumnSelect");
+const reportColumnsLabel = document.getElementById("reportColumnsLabel");
 const spellScorecard = document.getElementById("spellScorecard");
 const scoreAllBtn = document.getElementById("scoreAllBtn");
 const scorePassBtn = document.getElementById("scorePassBtn");
@@ -303,18 +304,22 @@ function populateReportColumns(sourceHeaders) {
 
 function syncReportParamVisibility() {
   if (!spellOptionsWrap || !spellScorecard) return;
-  const showSpell = state.reportType === "spell";
-  spellOptionsWrap.hidden = !showSpell;
-  spellScorecard.hidden = !showSpell;
+  const showColumnReport = state.reportType === "spell" || state.reportType === "space";
+  spellOptionsWrap.hidden = !showColumnReport;
+  spellScorecard.hidden = !showColumnReport;
+  if (reportColumnsLabel) {
+    reportColumnsLabel.textContent =
+      state.reportType === "space" ? "Space Check columns (multi-select)" : "Spell check columns (multi-select)";
+  }
   if (spellColumnSelect) {
-    spellColumnSelect.disabled = !showSpell;
+    spellColumnSelect.disabled = !showColumnReport;
   }
 }
 
 function handleReportTypeChange() {
   if (!reportSelect) return;
   state.reportType = reportSelect.value;
-  if (state.reportType !== "spell") {
+  if (state.reportType === "review") {
     state.spellStatusFilter = "all";
     state.reportColumns.clear();
     if (spellColumnSelect) {
@@ -325,6 +330,10 @@ function handleReportTypeChange() {
   }
   syncReportParamVisibility();
   renderTable();
+}
+
+function hasInternalSpace(value) {
+  return /\s/.test(String(value ?? ""));
 }
 
 function handleHierarchyColumnChange() {
@@ -620,9 +629,22 @@ function evaluateSpellRow(entry, selectedColumns) {
   return issues;
 }
 
+function evaluateSpaceRow(entry, selectedColumns) {
+  const issues = [];
+  selectedColumns.forEach((header) => {
+    const value = String(entry.row[header] ?? "");
+    if (!value) return;
+    if (hasInternalSpace(value)) {
+      issues.push(`${header}: contains spaces`);
+    }
+  });
+
+  return issues;
+}
+
 function applyReportFilter(rows) {
   const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  if (state.reportType !== "spell" || selectedColumns.length === 0) {
+  if ((state.reportType !== "spell" && state.reportType !== "space") || selectedColumns.length === 0) {
     return {
       rows,
       findingsByRowId: new Map(),
@@ -639,7 +661,7 @@ function applyReportFilter(rows) {
   let failCount = 0;
 
   rows.forEach((entry) => {
-    const issues = evaluateSpellRow(entry, selectedColumns);
+    const issues = state.reportType === "space" ? evaluateSpaceRow(entry, selectedColumns) : evaluateSpellRow(entry, selectedColumns);
     const status = issues.length > 0 ? "Fail" : "Pass";
     statusByRowId.set(entry.id, status);
     if (issues.length > 0) {
@@ -681,14 +703,19 @@ function renderTable() {
   state.filteredRows = reportedRows;
   state.findingsByRowId = findingsByRowId;
 
-  if (state.reportType === "spell") {
+  if (state.reportType === "spell" || state.reportType === "space") {
     updateScorecardButtons(passCount, failCount);
   }
 
   const rowsToRender = reportedRows;
   const visibleCount = rowsToRender.length;
   const maxDepth = Math.max(...rowsToRender.map((r) => r.level), 0);
-  const reportSummary = state.reportType === "spell" ? `Spell check · ${selectedColumns.length} column(s)` : "Review";
+  const reportSummary =
+    state.reportType === "spell"
+      ? `Spell check · ${selectedColumns.length} column(s)`
+      : state.reportType === "space"
+        ? `Space Check · ${selectedColumns.length} column(s)`
+        : "Review";
 
   stats.innerHTML = `
     <span>Headers: <strong>row ${state.headerRowNumber ?? "?"}</strong></span>
@@ -699,8 +726,9 @@ function renderTable() {
     <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const sourceHeaders = state.reportType === "spell" ? selectedColumns : state.headers.slice(1);
-  const headerSet = state.reportType === "spell" ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders] : state.headers;
+  const isColumnReport = state.reportType === "spell" || state.reportType === "space";
+  const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
+  const headerSet = isColumnReport ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders] : state.headers;
   const headerCells = headerSet.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
 
   const bodyRows = rowsToRender
@@ -723,12 +751,9 @@ function renderTable() {
         </td>
       `;
 
-      const findingCell =
-        state.reportType !== "spell"
-          ? ""
-          : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
+      const findingCell = !isColumnReport ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      const statusCell = state.reportType !== "spell" ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
+      const statusCell = !isColumnReport ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
 
       const rowCells = sourceHeaders
         .map((header) => {
