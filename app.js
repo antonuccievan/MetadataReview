@@ -38,9 +38,7 @@ resetBtn.addEventListener("click", () => {
   rebuildHierarchyFromParentChild();
 });
 
-if (themeToggleBtn) {
-  themeToggleBtn.addEventListener("click", toggleTheme);
-}
+themeToggleBtn.addEventListener("click", toggleTheme);
 initializeTheme();
 
 tableWrap.addEventListener(
@@ -87,12 +85,9 @@ function toggleTheme() {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  if (!themeToggleBtn) return;
-
   const icon = theme === "dark" ? "🌙" : "☀️";
-  const nextModeLabel = theme === "dark" ? "light" : "dark";
-  const label = `Theme (${theme} mode). Click to switch to ${nextModeLabel} mode`;
-  themeToggleBtn.textContent = `Theme ${icon}`;
+  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  themeToggleBtn.textContent = `${icon} ${theme === "dark" ? "Dark" : "Light"}`;
   themeToggleBtn.setAttribute("aria-label", label);
   themeToggleBtn.setAttribute("title", label);
 }
