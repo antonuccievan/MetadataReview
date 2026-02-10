@@ -96,28 +96,33 @@ async function handleFileUpload(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
-  setLoading(true, "Reading workbook...");
-  await waitForPaint();
+  try {
+    setLoading(true, "Reading workbook...");
+    await waitForPaint();
 
-  const data = await file.arrayBuffer();
-  state.workbook = XLSX.read(data, { type: "array", cellStyles: true });
+    const data = await file.arrayBuffer();
+    state.workbook = XLSX.read(data, { type: "array", cellStyles: true });
 
-  sheetSelect.innerHTML = '<option value="">Select a sheet</option>';
-  state.workbook.SheetNames.forEach((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    sheetSelect.append(option);
-  });
-  sheetSelect.disabled = false;
+    sheetSelect.innerHTML = '<option value="">Select a sheet</option>';
+    state.workbook.SheetNames.forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      sheetSelect.append(option);
+    });
+    sheetSelect.disabled = false;
 
-  const firstSheet = state.workbook.SheetNames[0];
-  if (firstSheet) {
-    sheetSelect.value = firstSheet;
-    await loadSheetRows();
-  } else {
+    const firstSheet = state.workbook.SheetNames[0];
+    if (firstSheet) {
+      sheetSelect.value = firstSheet;
+      await loadSheetRows();
+    } else {
+      setLoading(false);
+      tableWrap.innerHTML = '<div class="empty">Workbook contains no sheets.</div>';
+    }
+  } catch (error) {
     setLoading(false);
-    tableWrap.innerHTML = '<div class="empty">Workbook contains no sheets.</div>';
+    tableWrap.innerHTML = `<div class="empty">Unable to read workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
   }
 }
 
@@ -129,70 +134,75 @@ async function loadSheetRows() {
   const sheetName = sheetSelect.value;
   if (!sheetName || !state.workbook) return;
 
-  setLoading(true, `Processing sheet \"${sheetName}\"...`);
-  await waitForPaint();
+  try {
+    setLoading(true, `Processing sheet \"${sheetName}\"...`);
+    await waitForPaint();
 
-  const worksheet = state.workbook.Sheets[sheetName];
-  const grid = XLSX.utils.sheet_to_json(worksheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-    blankrows: false
-  });
-
-  if (grid.length === 0) {
-    setLoading(false);
-    tableWrap.innerHTML = '<div class="empty">The selected sheet is empty.</div>';
-    return;
-  }
-
-  const headerRowIndex = findHeaderRowIndex(grid);
-  if (headerRowIndex < 0) {
-    setLoading(false);
-    tableWrap.innerHTML = '<div class="empty">No header row found: column B is empty for all rows.</div>';
-    return;
-  }
-
-  const headerRow = grid[headerRowIndex] || [];
-  const headerStartColumnIndex = 1;
-
-  state.headerRowNumber = headerRowIndex + 1;
-  state.headerStartColumnNumber = headerStartColumnIndex + 1;
-  state.parentColumnNumber = state.headerStartColumnNumber + 1;
-  state.childColumnNumber = state.headerStartColumnNumber + 2;
-
-  const sourceHeaders = headerRow
-    .slice(headerStartColumnIndex)
-    .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
-
-  state.headers = ["Hierarchy", ...sourceHeaders];
-
-  const dataRows = grid.slice(headerRowIndex + 1).map((row, index) => {
-    const mapped = {};
-    sourceHeaders.forEach((header, colIndex) => {
-      mapped[header] = row[colIndex + headerStartColumnIndex] ?? "";
+    const worksheet = state.workbook.Sheets[sheetName];
+    const grid = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+      blankrows: false
     });
 
-    const parentValue = normalizeHierarchyValue(row[2]);
-    const childValue = normalizeHierarchyValue(row[3]);
+    if (grid.length === 0) {
+      setLoading(false);
+      tableWrap.innerHTML = '<div class="empty">The selected sheet is empty.</div>';
+      return;
+    }
 
-    return {
-      id: `row-${index}`,
-      originalIndex: index,
-      row: mapped,
-      level: 0,
-      parentId: null,
-      hasChildren: false,
-      isVisible: true,
-      hierarchyLabel: childValue || parentValue || `(Row ${headerRowIndex + index + 2})`,
-      parentKey: parentValue,
-      childKey: childValue,
-      hierarchyPath: ""
-    };
-  });
+    const headerRowIndex = findHeaderRowIndex(grid);
+    if (headerRowIndex < 0) {
+      setLoading(false);
+      tableWrap.innerHTML = '<div class="empty">No header row found: column B is empty for all rows.</div>';
+      return;
+    }
 
-  state.rows = dataRows;
-  rebuildHierarchyFromParentChild();
+    const headerRow = grid[headerRowIndex] || [];
+    const headerStartColumnIndex = 1;
+
+    state.headerRowNumber = headerRowIndex + 1;
+    state.headerStartColumnNumber = headerStartColumnIndex + 1;
+    state.parentColumnNumber = state.headerStartColumnNumber + 1;
+    state.childColumnNumber = state.headerStartColumnNumber + 2;
+
+    const sourceHeaders = headerRow
+      .slice(headerStartColumnIndex)
+      .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
+
+    state.headers = ["Hierarchy", ...sourceHeaders];
+
+    const dataRows = grid.slice(headerRowIndex + 1).map((row, index) => {
+      const mapped = {};
+      sourceHeaders.forEach((header, colIndex) => {
+        mapped[header] = row[colIndex + headerStartColumnIndex] ?? "";
+      });
+
+      const parentValue = normalizeHierarchyValue(row[2]);
+      const childValue = normalizeHierarchyValue(row[3]);
+
+      return {
+        id: `row-${index}`,
+        originalIndex: index,
+        row: mapped,
+        level: 0,
+        parentId: null,
+        hasChildren: false,
+        isVisible: true,
+        hierarchyLabel: childValue || parentValue || `(Row ${headerRowIndex + index + 2})`,
+        parentKey: parentValue,
+        childKey: childValue,
+        hierarchyPath: ""
+      };
+    });
+
+    state.rows = dataRows;
+    rebuildHierarchyFromParentChild();
+  } catch (error) {
+    setLoading(false);
+    tableWrap.innerHTML = `<div class="empty">Unable to process sheet: ${escapeHtml(error?.message || "unknown error")}</div>`;
+  }
 }
 
 function normalizeHierarchyValue(value) {
@@ -265,11 +275,15 @@ function rebuildHierarchyFromParentChild() {
 
   state.rows.forEach((entry) => {
     const path = [];
+    const seen = new Set();
     let current = entry;
-    while (current) {
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
       path.push(current.hierarchyLabel);
       current = current.parentId ? rowById.get(current.parentId) : null;
     }
+
+    if (current) path.push("[Cycle]");
     entry.hierarchyPath = path.reverse().join(" > ");
   });
 
