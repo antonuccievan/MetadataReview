@@ -7,6 +7,26 @@ const BASIC_DICTIONARY_WORDS = new Set([
   "can","case","check","child","column","columns","company","data","date","description","document","documents","down","each","email","entry","error","errors","file","files","for","from","group","groups","has","have","he","her","here","his","how","i","id","if","in","into","is","it","its","item","items","job","key","keys","label","line","list","lower","made","may","metadata","mode","name","new","no","not","number","of","on","one","or","order","other","our","out","over","parent","path","proper","record","records","report","reports","review","row","rows","run","same","select","sheet","should","show","simple","spell","start","status","string","table","text","that","the","their","them","there","these","this","to","type","under","upper","up","use","value","values","was","we","when","where","which","with","work","workflow","you","your"
 ]);
 
+const FINANCE_ACCOUNTING_TERMS = new Set([
+  "account","accounts","accounting","accrual","accruals","accrued","adjusting","adjustment","adjustments","amortization","amortize","amortized",
+  "ap","ar","asset","assets","audit","audited","auditor","auditors","balance","balances","bank","banking","benchmark","book","booked","books",
+  "budget","budgeted","budgeting","capex","capital","capitalization","capitalize","cash","cashflow","cashflows","chart","close","closing","coa",
+  "collection","collections","compliance","consolidate","consolidated","consolidation","contra","controller","controllers","cost","costing","costs",
+  "credit","credits","currency","current","debit","debits","deferred","depreciate","depreciated","depreciation","disclosure","disclosures","ebit",
+  "ebitda","equity","expense","expenses","fair","finance","financial","financing","fiscal","forecast","forecasting","forecasts","fraud","gaap",
+  "general","gl","goodwill","gross","impairment","income","incurred","indexation","indirect","inflation","interest","inventory","invoice","invoiced",
+  "invoices","journal","journals","land","lease","leases","ledger","liability","liabilities","liquidation","loan","loans","longterm","margin",
+  "materiality","measure","measurement","monthend","net","noncash","note","notes","operating","opex","otherincome","otherexpense","outflow","owner",
+  "owners","ownership","payable","payables","payroll","period","periodic","posting","postings","ppe","prepaid","price","pricing","procurement",
+  "profit","profitability","provision","provisions","purchase","purchases","ratio","ratios","receivable","receivables","reconcile","reconciled",
+  "reconciliation","reconciliations","recognition","reserve","reserves","residual","restate","restated","restatement","retained","retention","revaluation",
+  "revenue","revenues","rollforward","scenario","segment","segments","sellside","sga","soa","solvency","statement","statements","subledger","subsidiary",
+  "tax","taxable","taxation","throughput","trading","transaction","transactions","treasury","trial","turnover","unearned","variance","variances","vendor",
+  "vendors","workingcapital","writeoff","writeoffs","yearend","building","buildings"
+]);
+
+const EXTENDED_DICTIONARY_WORDS = new Set([...BASIC_DICTIONARY_WORDS, ...FINANCE_ACCOUNTING_TERMS]);
+
 const state = {
   workbook: null,
   dataRows: [],
@@ -569,7 +589,20 @@ function looksMisspelled(token) {
   }
 
   if (cleaned.length <= 2) return false;
-  return !BASIC_DICTIONARY_WORDS.has(normalized);
+
+  if (EXTENDED_DICTIONARY_WORDS.has(normalized)) {
+    return false;
+  }
+
+  const fallbackCandidates = [
+    normalized,
+    normalized.replace(/(ing|ed|ly|er|est)$/i, ""),
+    normalized.replace(/ies$/i, "y"),
+    normalized.replace(/es$/i, ""),
+    normalized.replace(/s$/i, "")
+  ].filter((value, index, list) => value.length > 2 && list.indexOf(value) === index);
+
+  return !fallbackCandidates.some((candidate) => EXTENDED_DICTIONARY_WORDS.has(candidate));
 }
 
 function evaluateSpellRow(entry, selectedColumns) {
