@@ -134,6 +134,38 @@
       margin-top: 0.2rem;
     }
 
+    .scorecard {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .score-btn {
+      min-width: 120px;
+      border-radius: 999px;
+      padding: 0.45rem 0.85rem;
+      border: 1px solid var(--border);
+      background: color-mix(in oklab, var(--surface) 90%, var(--accent));
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .score-btn.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 22%, transparent);
+    }
+
+    .misspelled-token {
+      background: color-mix(in oklab, #ef4444 28%, transparent);
+      border-radius: 4px;
+      padding: 0 0.15rem;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+
     .checkbox-list {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -357,23 +389,19 @@
           <div>
             <label for="reportSelect">Report</label>
             <select id="reportSelect" disabled>
-              <option value="none">No report</option>
+              <option value="review">Review</option>
               <option value="spell">Spell check</option>
-              <option value="case">Case check</option>
-            </select>
-          </div>
-          <div id="caseModeWrap" hidden>
-            <label for="caseModeSelect">Case mode</label>
-            <select id="caseModeSelect" disabled>
-              <option value="proper">Proper Case</option>
-              <option value="upper">Upper Case</option>
-              <option value="lower">Lower Case</option>
             </select>
           </div>
         </div>
-        <div style="margin-top:0.75rem">
-          <label>Report columns (multi-select)</label>
-          <div id="reportColumnChecklist" class="checkbox-list" aria-label="Report columns"></div>
+        <div id="spellOptionsWrap" style="margin-top:0.75rem" hidden>
+          <label for="spellColumnSelect">Spell check columns (multi-select)</label>
+          <select id="spellColumnSelect" multiple size="6" aria-label="Spell check columns"></select>
+        </div>
+        <div id="spellScorecard" class="scorecard" hidden>
+          <button type="button" id="scoreAllBtn" class="score-btn active">All: 0</button>
+          <button type="button" id="scorePassBtn" class="score-btn">Pass: 0</button>
+          <button type="button" id="scoreFailBtn" class="score-btn">Fail: 0</button>
         </div>
       </div>
 
