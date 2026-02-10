@@ -109,13 +109,20 @@ async function loadSheetRows() {
     return;
   }
 
-  const sourceHeaders = (grid[0] || []).map((h, i) => (h || `Column ${i + 1}`).toString().trim());
+  const headerRow = grid[0] || [];
+  const firstHeaderCell = String(headerRow[0] ?? "").trim();
+  const headerOffset = firstHeaderCell ? 0 : 1;
+
+  const sourceHeaders = headerRow
+    .slice(headerOffset)
+    .map((h, i) => (String(h ?? "").trim() || `Column ${headerOffset + i + 1}`));
+
   state.headers = ["Hierarchy", ...sourceHeaders];
 
   const dataRows = grid.slice(1).map((row, index) => {
     const mapped = {};
     sourceHeaders.forEach((header, colIndex) => {
-      mapped[header] = row[colIndex] ?? "";
+      mapped[header] = row[colIndex + headerOffset] ?? "";
     });
 
     const parentValue = normalizeHierarchyValue(row[2]);
