@@ -262,16 +262,7 @@ function syncReportParamVisibility() {
 function handleReportTypeChange() {
   if (!reportSelect) return;
   state.reportType = reportSelect.value;
-  if (state.reportType === "spell") {
-    if (spellColumnSelect && state.reportColumns.size === 0) {
-      [...spellColumnSelect.options].forEach((option) => {
-        const columnIndex = Number(option.value);
-        if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= state.sourceHeaders.length) return;
-        option.selected = true;
-        state.reportColumns.add(state.sourceHeaders[columnIndex]);
-      });
-    }
-  } else {
+  if (state.reportType !== "spell") {
     state.spellStatusFilter = "all";
     state.reportColumns.clear();
     if (spellColumnSelect) {
