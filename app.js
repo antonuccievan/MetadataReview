@@ -21,6 +21,8 @@ const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const resetBtn = document.getElementById("resetBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
+const parentColumnSelect = document.getElementById("parentColumnSelect");
+const childColumnSelect = document.getElementById("childColumnSelect");
 
 fileInput.addEventListener("change", handleFileUpload);
 sheetSelect.addEventListener("change", loadSheetRows);
@@ -37,6 +39,8 @@ resetBtn.addEventListener("click", () => {
   if (state.rows.length === 0) return;
   rebuildHierarchyFromParentChild();
 });
+parentColumnSelect.addEventListener("change", handleHierarchyColumnChange);
+childColumnSelect.addEventListener("change", handleHierarchyColumnChange);
 
 themeToggleBtn.addEventListener("click", toggleTheme);
 initializeTheme();
@@ -130,6 +134,50 @@ function findHeaderRowIndex(grid) {
   return grid.findIndex((row) => String(row[1] ?? "").trim() !== "");
 }
 
+function populateHierarchyColumnSelects(sourceHeaders) {
+  const options = sourceHeaders
+    .map((header, index) => {
+      const columnNumber = state.headerStartColumnNumber + index;
+      return `<option value="${columnNumber}">Column ${columnNumber}: ${escapeHtml(header)}</option>`;
+    })
+    .join("");
+
+  parentColumnSelect.innerHTML = options;
+  childColumnSelect.innerHTML = options;
+
+  const fallbackParent = state.headerStartColumnNumber + 1;
+  const fallbackChild = state.headerStartColumnNumber + 2;
+  const lastAvailableColumn = state.headerStartColumnNumber + sourceHeaders.length - 1;
+
+  state.parentColumnNumber = Math.min(fallbackParent, lastAvailableColumn);
+  state.childColumnNumber = Math.min(fallbackChild, lastAvailableColumn);
+
+  parentColumnSelect.value = String(state.parentColumnNumber);
+  childColumnSelect.value = String(state.childColumnNumber);
+  parentColumnSelect.disabled = false;
+  childColumnSelect.disabled = false;
+}
+
+function handleHierarchyColumnChange() {
+  if (state.rows.length === 0) return;
+
+  const selectedParentColumn = Number(parentColumnSelect.value);
+  const selectedChildColumn = Number(childColumnSelect.value);
+
+  if (!Number.isFinite(selectedParentColumn) || !Number.isFinite(selectedChildColumn)) return;
+
+  state.parentColumnNumber = selectedParentColumn;
+  state.childColumnNumber = selectedChildColumn;
+
+  state.rows.forEach((entry) => {
+    entry.parentKey = normalizeHierarchyValue(entry.sourceRow[selectedParentColumn - 1]);
+    entry.childKey = normalizeHierarchyValue(entry.sourceRow[selectedChildColumn - 1]);
+    entry.hierarchyLabel = entry.childKey || entry.parentKey || `(Row ${entry.sheetRowNumber})`;
+  });
+
+  rebuildHierarchyFromParentChild();
+}
+
 async function loadSheetRows() {
   const sheetName = sheetSelect.value;
   if (!sheetName || !state.workbook) return;
@@ -172,6 +220,7 @@ async function loadSheetRows() {
       .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
 
     state.headers = ["Hierarchy", ...sourceHeaders];
+    populateHierarchyColumnSelects(sourceHeaders);
 
     const dataRows = grid.slice(headerRowIndex + 1).map((row, index) => {
       const mapped = {};
@@ -179,12 +228,14 @@ async function loadSheetRows() {
         mapped[header] = row[colIndex + headerStartColumnIndex] ?? "";
       });
 
-      const parentValue = normalizeHierarchyValue(row[2]);
-      const childValue = normalizeHierarchyValue(row[3]);
+      const parentValue = normalizeHierarchyValue(row[state.parentColumnNumber - 1]);
+      const childValue = normalizeHierarchyValue(row[state.childColumnNumber - 1]);
 
       return {
         id: `row-${index}`,
         originalIndex: index,
+        sourceRow: row,
+        sheetRowNumber: headerRowIndex + index + 2,
         row: mapped,
         level: 0,
         parentId: null,
