@@ -20,7 +20,6 @@ const stats = document.getElementById("stats");
 const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const resetBtn = document.getElementById("resetBtn");
-const exportHierarchyBtn = document.getElementById("exportHierarchyBtn");
 const themeToggleBtn = document.getElementById("themeToggleBtn");
 
 fileInput.addEventListener("change", handleFileUpload);
@@ -38,7 +37,6 @@ resetBtn.addEventListener("click", () => {
   if (state.rows.length === 0) return;
   rebuildHierarchyFromParentChild();
 });
-exportHierarchyBtn.addEventListener("click", exportHierarchy);
 
 themeToggleBtn.addEventListener("click", toggleTheme);
 initializeTheme();
@@ -294,43 +292,9 @@ function rebuildHierarchyFromParentChild() {
   expandAllBtn.disabled = false;
   collapseAllBtn.disabled = false;
   resetBtn.disabled = false;
-  exportHierarchyBtn.disabled = false;
 
   setLoading(false);
   renderTable();
-}
-
-function exportHierarchy() {
-  if (!state.rows.length || !state.headers.length || !state.workbook) return;
-
-  const visibleRows = state.rows.filter((entry) => entry.isVisible);
-  if (!visibleRows.length) return;
-
-  const sourceHeaders = state.headers.slice(1);
-  const exportRows = visibleRows.map((entry) => {
-    const row = {
-      Hierarchy: `${"  ".repeat(entry.level)}${entry.hierarchyLabel}`,
-      "Hierarchy Path": entry.hierarchyPath,
-      "Hierarchy Level": entry.level + 1
-    };
-
-    sourceHeaders.forEach((header) => {
-      row[header] = entry.row[header] ?? "";
-    });
-
-    return row;
-  });
-
-  const exportSheet = XLSX.utils.json_to_sheet(exportRows);
-  const exportBook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(exportBook, exportSheet, "Hierarchy");
-
-  const activeSheetName = sheetSelect.value || "sheet";
-  const safeSheetName = activeSheetName.replace(/[^a-z0-9-_]+/gi, "_").replace(/^_+|_+$/g, "") || "sheet";
-  const timestamp = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
-  const fileName = `${safeSheetName}_hierarchy_${timestamp}.xlsx`;
-
-  XLSX.writeFile(exportBook, fileName);
 }
 
 function renderTable() {
