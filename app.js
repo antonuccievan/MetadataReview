@@ -24,24 +24,24 @@ const themeToggleBtn = document.getElementById("themeToggleBtn");
 const parentColumnSelect = document.getElementById("parentColumnSelect");
 const childColumnSelect = document.getElementById("childColumnSelect");
 
-fileInput.addEventListener("change", handleFileUpload);
-sheetSelect.addEventListener("change", loadSheetRows);
-expandAllBtn.addEventListener("click", () => {
+fileInput?.addEventListener("change", handleFileUpload);
+sheetSelect?.addEventListener("change", loadSheetRows);
+expandAllBtn?.addEventListener("click", () => {
   state.collapsed.clear();
   renderTable();
 });
-collapseAllBtn.addEventListener("click", () => {
+collapseAllBtn?.addEventListener("click", () => {
   state.collapsed = new Set(state.rows.filter((r) => r.hasChildren).map((r) => r.id));
   state.rows.filter((r) => r.level === 0).forEach((r) => state.collapsed.delete(r.id));
   renderTable();
 });
-parentColumnSelect.addEventListener("change", handleHierarchyColumnChange);
-childColumnSelect.addEventListener("change", handleHierarchyColumnChange);
+parentColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
+childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 
-themeToggleBtn.addEventListener("click", toggleTheme);
+themeToggleBtn?.addEventListener("click", toggleTheme);
 initializeTheme();
 
-tableWrap.addEventListener(
+tableWrap?.addEventListener(
   "wheel",
   (event) => {
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
@@ -87,6 +87,7 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   const icon = theme === "dark" ? "🌙" : "☀️";
   const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  if (!themeToggleBtn) return;
   themeToggleBtn.textContent = `${icon} ${theme === "dark" ? "Dark" : "Light"}`;
   themeToggleBtn.setAttribute("aria-label", label);
   themeToggleBtn.setAttribute("title", label);
@@ -102,6 +103,8 @@ async function handleFileUpload(event) {
 
     const data = await file.arrayBuffer();
     state.workbook = XLSX.read(data, { type: "array", cellStyles: true });
+
+    if (!sheetSelect) throw new Error("Sheet selector is unavailable in this page layout.");
 
     sheetSelect.innerHTML = '<option value="">Select a sheet</option>';
     state.workbook.SheetNames.forEach((name) => {
@@ -131,6 +134,10 @@ function findHeaderRowIndex(grid) {
 }
 
 function populateHierarchyColumnSelects(sourceHeaders) {
+  if (!parentColumnSelect || !childColumnSelect) {
+    throw new Error("Hierarchy selectors are unavailable in this page layout.");
+  }
+
   const options = sourceHeaders
     .map((header, index) => {
       const columnNumber = state.headerStartColumnNumber + index;
@@ -193,6 +200,7 @@ function runQuery() {
 }
 
 async function loadSheetRows() {
+  if (!sheetSelect) return;
   const sheetName = sheetSelect.value;
   if (!sheetName || !state.workbook) return;
 
@@ -233,6 +241,12 @@ async function loadSheetRows() {
       .slice(headerStartColumnIndex)
       .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
 
+    if (sourceHeaders.length === 0) {
+      setLoading(false);
+      tableWrap.innerHTML = '<div class="empty">The selected sheet has no columns after column B.</div>';
+      return;
+    }
+
     state.headers = ["Hierarchy", ...sourceHeaders];
     populateHierarchyColumnSelects(sourceHeaders);
 
@@ -254,8 +268,8 @@ async function loadSheetRows() {
     state.dataRows = dataRows;
     state.rows = buildEntries(dataRows.slice(0, 10));
 
-    expandAllBtn.disabled = false;
-    collapseAllBtn.disabled = false;
+    if (expandAllBtn) expandAllBtn.disabled = false;
+    if (collapseAllBtn) collapseAllBtn.disabled = false;
 
     rebuildHierarchyFromParentChild();
     runQuery();
@@ -363,8 +377,8 @@ function rebuildHierarchyFromParentChild() {
   state.rows.forEach(visit);
   state.rows = ordered;
 
-  expandAllBtn.disabled = false;
-  collapseAllBtn.disabled = false;
+  if (expandAllBtn) expandAllBtn.disabled = false;
+  if (collapseAllBtn) collapseAllBtn.disabled = false;
 
   setLoading(false);
   renderTable();
