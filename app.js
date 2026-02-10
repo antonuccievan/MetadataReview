@@ -1,10 +1,16 @@
+const THEME_STORAGE_KEY = "metadata-review-theme";
+
 const state = {
   workbook: null,
   rows: [],
   headers: [],
   collapsed: new Set(),
   hierarchyRoots: [],
-  loading: false
+  loading: false,
+  headerRowNumber: null,
+  headerStartColumnNumber: 2,
+  parentColumnNumber: 3,
+  childColumnNumber: 4
 };
 
 const fileInput = document.getElementById("fileInput");
@@ -14,6 +20,7 @@ const stats = document.getElementById("stats");
 const expandAllBtn = document.getElementById("expandAllBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const resetBtn = document.getElementById("resetBtn");
+const themeToggleBtn = document.getElementById("themeToggleBtn");
 
 fileInput.addEventListener("change", handleFileUpload);
 sheetSelect.addEventListener("change", loadSheetRows);
@@ -30,6 +37,11 @@ resetBtn.addEventListener("click", () => {
   if (state.rows.length === 0) return;
   rebuildHierarchyFromParentChild();
 });
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", toggleTheme);
+}
+initializeTheme();
 
 tableWrap.addEventListener(
   "wheel",
@@ -57,6 +69,32 @@ function setLoading(loading, message = "Processing workbook...") {
 
 function waitForPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function initializeTheme() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = savedTheme || (prefersDark ? "dark" : "light");
+  applyTheme(theme);
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+  const nextTheme = currentTheme === "dark" ? "light" : "dark";
+  applyTheme(nextTheme);
+  localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  if (!themeToggleBtn) return;
+
+  const icon = theme === "dark" ? "🌙" : "☀️";
+  const nextModeLabel = theme === "dark" ? "light" : "dark";
+  const label = `Theme (${theme} mode). Click to switch to ${nextModeLabel} mode`;
+  themeToggleBtn.textContent = `Theme ${icon}`;
+  themeToggleBtn.setAttribute("aria-label", label);
+  themeToggleBtn.setAttribute("title", label);
 }
 
 async function handleFileUpload(event) {
@@ -88,6 +126,10 @@ async function handleFileUpload(event) {
   }
 }
 
+function findHeaderRowIndex(grid) {
+  return grid.findIndex((row) => String(row[1] ?? "").trim() !== "");
+}
+
 async function loadSheetRows() {
   const sheetName = sheetSelect.value;
   if (!sheetName || !state.workbook) return;
@@ -109,20 +151,31 @@ async function loadSheetRows() {
     return;
   }
 
-  const headerRow = grid[0] || [];
-  const firstHeaderCell = String(headerRow[0] ?? "").trim();
-  const headerOffset = firstHeaderCell ? 0 : 1;
+  const headerRowIndex = findHeaderRowIndex(grid);
+  if (headerRowIndex < 0) {
+    setLoading(false);
+    tableWrap.innerHTML = '<div class="empty">No header row found: column B is empty for all rows.</div>';
+    return;
+  }
+
+  const headerRow = grid[headerRowIndex] || [];
+  const headerStartColumnIndex = 1;
+
+  state.headerRowNumber = headerRowIndex + 1;
+  state.headerStartColumnNumber = headerStartColumnIndex + 1;
+  state.parentColumnNumber = state.headerStartColumnNumber + 1;
+  state.childColumnNumber = state.headerStartColumnNumber + 2;
 
   const sourceHeaders = headerRow
-    .slice(headerOffset)
-    .map((h, i) => (String(h ?? "").trim() || `Column ${headerOffset + i + 1}`));
+    .slice(headerStartColumnIndex)
+    .map((h, i) => (String(h ?? "").trim() || `Column ${state.headerStartColumnNumber + i}`));
 
   state.headers = ["Hierarchy", ...sourceHeaders];
 
-  const dataRows = grid.slice(1).map((row, index) => {
+  const dataRows = grid.slice(headerRowIndex + 1).map((row, index) => {
     const mapped = {};
     sourceHeaders.forEach((header, colIndex) => {
-      mapped[header] = row[colIndex + headerOffset] ?? "";
+      mapped[header] = row[colIndex + headerStartColumnIndex] ?? "";
     });
 
     const parentValue = normalizeHierarchyValue(row[2]);
@@ -136,7 +189,7 @@ async function loadSheetRows() {
       parentId: null,
       hasChildren: false,
       isVisible: true,
-      hierarchyLabel: childValue || parentValue || `(Row ${index + 2})`,
+      hierarchyLabel: childValue || parentValue || `(Row ${headerRowIndex + index + 2})`,
       parentKey: parentValue,
       childKey: childValue,
       hierarchyPath: ""
@@ -269,11 +322,11 @@ function renderTable() {
   const maxDepth = Math.max(...state.rows.map((r) => r.level), 0);
 
   stats.innerHTML = `
-    <span>Headers: <strong>row 1</strong></span>
+    <span>Headers: <strong>row ${state.headerRowNumber ?? "?"}</strong></span>
     <span>Total rows: <strong>${state.rows.length}</strong></span>
     <span>Visible rows: <strong>${visibleCount}</strong></span>
     <span>Max depth: <strong>${maxDepth + 1}</strong></span>
-    <span>Grouping source: <strong>column 3 (parent) → column 4 (child)</strong></span>
+    <span>Grouping source: <strong>column ${state.parentColumnNumber} (parent) → column ${state.childColumnNumber} (child)</strong></span>
   `;
 
   const headerCells = state.headers.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
@@ -335,7 +388,7 @@ function renderTable() {
 }
 
 function escapeHtml(input) {
-  return input
+  return String(input)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
