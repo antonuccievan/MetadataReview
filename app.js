@@ -1,6 +1,12 @@
 const THEME_STORAGE_KEY = "metadata-review-theme";
-const SPELL_DICTIONARY_AFF_URL = "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.aff";
-const SPELL_DICTIONARY_DIC_URL = "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.dic";
+const SPELL_DICTIONARY_AFF_SOURCES = [
+  "./dictionaries/en_US.aff",
+  "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.aff"
+];
+const SPELL_DICTIONARY_DIC_SOURCES = [
+  "./dictionaries/en_US.dic",
+  "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.dic"
+];
 
 const BASIC_DICTIONARY_WORDS = new Set([
   "a","about","above","across","after","again","against","all","also","am","an","and","any","are","as","at","be","been","before","being","below","between","both","but","by",
@@ -25,7 +31,19 @@ const FINANCE_ACCOUNTING_TERMS = new Set([
   "vendors","workingcapital","writeoff","writeoffs","yearend","building","buildings"
 ]);
 
-const EXTENDED_DICTIONARY_WORDS = new Set([...BASIC_DICTIONARY_WORDS, ...FINANCE_ACCOUNTING_TERMS]);
+const COMMON_ENGLISH_TERMS = new Set([
+  "real","estate","investments","property","rental","construction","industry","market","portfolio","management",
+  "operations","operational","service","services","project","projects","client","clients","customer","customers",
+  "internal","external","process","processes","analysis","reviewer","reviewers","quality","control","owner",
+  "owners","team","teams","business","department","commercial","residential","office","offices","lease",
+  "leases","tenant","tenants","contract","contracts","agreement","agreements","development","developments"
+]);
+
+const EXTENDED_DICTIONARY_WORDS = new Set([
+  ...BASIC_DICTIONARY_WORDS,
+  ...FINANCE_ACCOUNTING_TERMS,
+  ...COMMON_ENGLISH_TERMS
+]);
 
 const state = {
   workbook: null,
@@ -168,16 +186,13 @@ async function initializeSpellChecker() {
   }
 
   try {
-    const [affResponse, dicResponse] = await Promise.all([
-      fetch(SPELL_DICTIONARY_AFF_URL, { cache: "force-cache" }),
-      fetch(SPELL_DICTIONARY_DIC_URL, { cache: "force-cache" })
+    const [affData, dicData] = await Promise.all([
+      fetchFirstAvailableText(SPELL_DICTIONARY_AFF_SOURCES),
+      fetchFirstAvailableText(SPELL_DICTIONARY_DIC_SOURCES)
     ]);
 
-    if (!affResponse.ok || !dicResponse.ok) {
-      return;
-    }
+    if (!affData || !dicData) return;
 
-    const [affData, dicData] = await Promise.all([affResponse.text(), dicResponse.text()]);
     state.spellChecker = new window.Typo("en_US", affData, dicData, { platform: "any" });
     state.spellCheckerReady = true;
 
@@ -187,6 +202,20 @@ async function initializeSpellChecker() {
   } catch {
     // Fallback to BASIC_DICTIONARY_WORDS-based checks when network loading fails.
   }
+}
+
+async function fetchFirstAvailableText(urls) {
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "force-cache" });
+      if (response.ok) {
+        return response.text();
+      }
+    } catch {
+      // Try the next source.
+    }
+  }
+  return null;
 }
 
 function initializeTheme() {
@@ -585,7 +614,15 @@ function looksMisspelled(token) {
   if (normalized.length <= 2) return false;
 
   if (state.spellCheckerReady && state.spellChecker) {
-    if (state.spellChecker.check(cleaned) || state.spellChecker.check(normalized)) {
+    const spellCandidates = [
+      cleaned,
+      cleaned.toLowerCase(),
+      cleaned.toUpperCase(),
+      normalized,
+      normalized.charAt(0).toUpperCase() + normalized.slice(1)
+    ].filter((value, index, values) => value && values.indexOf(value) === index);
+
+    if (spellCandidates.some((candidate) => state.spellChecker.check(candidate))) {
       return false;
     }
 
