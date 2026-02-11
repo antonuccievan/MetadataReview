@@ -8,11 +8,6 @@ const SPELL_DICTIONARY_DIC_SOURCES = [
   "https://cdn.jsdelivr.net/npm/dictionary-en-us@3.0.0/index.dic"
 ];
 
-const BASIC_DICTIONARY_WORDS = new Set([
-  "a","about","above","across","after","again","against","all","also","am","an","and","any","are","as","at","be","been","before","being","below","between","both","but","by",
-  "can","case","check","child","column","columns","company","data","date","description","document","documents","down","each","email","entry","error","errors","file","files","for","from","group","groups","has","have","he","her","here","his","how","i","id","if","in","into","is","it","its","item","items","job","key","keys","label","line","list","lower","made","may","metadata","mode","name","new","no","not","number","of","on","one","or","order","other","our","out","over","parent","path","proper","record","records","report","reports","review","row","rows","run","same","select","sheet","should","show","simple","spell","start","status","string","table","text","that","the","their","them","there","these","this","to","type","under","upper","up","use","value","values","was","we","when","where","which","with","work","workflow","you","your"
-]);
-
 const FINANCE_ACCOUNTING_TERMS = new Set([
   "account","accounts","accounting","accrual","accruals","accrued","adjusting","adjustment","adjustments","amortization","amortize","amortized",
   "ap","ar","asset","assets","audit","audited","auditor","auditors","balance","balances","bank","banking","benchmark","book","booked","books",
@@ -29,20 +24,6 @@ const FINANCE_ACCOUNTING_TERMS = new Set([
   "revenue","revenues","rollforward","scenario","segment","segments","sellside","sga","soa","solvency","statement","statements","subledger","subsidiary",
   "tax","taxable","taxation","throughput","trading","transaction","transactions","treasury","trial","turnover","unearned","variance","variances","vendor",
   "vendors","workingcapital","writeoff","writeoffs","yearend","building","buildings"
-]);
-
-const COMMON_ENGLISH_TERMS = new Set([
-  "real","estate","investments","property","rental","construction","industry","market","portfolio","management",
-  "operations","operational","service","services","project","projects","client","clients","customer","customers",
-  "internal","external","process","processes","analysis","reviewer","reviewers","quality","control","owner",
-  "owners","team","teams","business","department","commercial","residential","office","offices","lease",
-  "leases","tenant","tenants","contract","contracts","agreement","agreements","development","developments"
-]);
-
-const EXTENDED_DICTIONARY_WORDS = new Set([
-  ...BASIC_DICTIONARY_WORDS,
-  ...FINANCE_ACCOUNTING_TERMS,
-  ...COMMON_ENGLISH_TERMS
 ]);
 
 const state = {
@@ -200,7 +181,7 @@ async function initializeSpellChecker() {
       renderTable();
     }
   } catch {
-    // Fallback to BASIC_DICTIONARY_WORDS-based checks when network loading fails.
+    // Fallback behavior is handled in looksMisspelled when dictionary loading fails.
   }
 }
 
@@ -601,109 +582,49 @@ function tokenize(value) {
     .filter(Boolean);
 }
 
-function levenshteinDistance(a, b) {
-  const source = String(a ?? "");
-  const target = String(b ?? "");
-  if (source === target) return 0;
-  if (!source.length) return target.length;
-  if (!target.length) return source.length;
-
-  const matrix = Array.from({ length: source.length + 1 }, (_, row) => {
-    const values = new Array(target.length + 1).fill(0);
-    values[0] = row;
-    return values;
-  });
-
-  for (let col = 0; col <= target.length; col += 1) {
-    matrix[0][col] = col;
-  }
-
-  for (let row = 1; row <= source.length; row += 1) {
-    for (let col = 1; col <= target.length; col += 1) {
-      const substitutionCost = source[row - 1] === target[col - 1] ? 0 : 1;
-      matrix[row][col] = Math.min(
-        matrix[row - 1][col] + 1,
-        matrix[row][col - 1] + 1,
-        matrix[row - 1][col - 1] + substitutionCost
-      );
-    }
-  }
-
-  return matrix[source.length][target.length];
-}
-
-function hasObviousTypoPattern(token) {
-  const normalized = String(token ?? "").toLowerCase();
-  if (!normalized) return false;
-
-  if (/(.)\1\1/.test(normalized)) return true;
-  if (!/[aeiouy]/.test(normalized) && normalized.length >= 6) return true;
-  if (/[bcdfghjklmnpqrstvwxyz]{6,}/.test(normalized)) return true;
-
-  return false;
-}
-
 function looksMisspelled(token) {
   if (!token) return false;
   if (/\d/.test(token)) return false;
-  if (token.length <= 2) return false;
-  if (/^[A-Z]{2,6}$/.test(token)) return false;
-  if (/^[A-Za-z]+[A-Z][A-Za-z]*$/.test(token)) return false;
-  if (/^[A-Z][a-z]+(?:'[A-Za-z]+)?$/.test(token)) return false;
 
   const cleaned = token.replace(/^'+|'+$/g, "");
-  const normalized = cleaned.toLowerCase().replace(/'(s|d|ll|re|ve|m|t)$/i, "");
+  const normalized = cleaned.toLowerCase();
 
   if (normalized.length <= 2) return false;
 
+  const businessCandidates = [
+    normalized,
+    normalized.replace(/'(s|d|ll|re|ve|m|t)$/i, ""),
+    normalized.replace(/ies$/i, "y"),
+    normalized.replace(/es$/i, ""),
+    normalized.replace(/s$/i, "")
+  ].filter((value, index, values) => value.length > 2 && values.indexOf(value) === index);
+
+  // Step 1 + Step 2: Check standard US English dictionary first.
   if (state.spellCheckerReady && state.spellChecker) {
     const spellCandidates = [
       cleaned,
-      cleaned.toLowerCase(),
-      cleaned.toUpperCase(),
       normalized,
-      normalized.charAt(0).toUpperCase() + normalized.slice(1)
+      normalized.charAt(0).toUpperCase() + normalized.slice(1),
+      ...businessCandidates
     ].filter((value, index, values) => value && values.indexOf(value) === index);
 
     if (spellCandidates.some((candidate) => state.spellChecker.check(candidate))) {
       return false;
     }
-
-    const contractionParts = normalized.split("'").filter(Boolean);
-    if (contractionParts.length > 1 && contractionParts.every((part) => state.spellChecker.check(part))) {
-      return false;
-    }
-
-    const suggestions = state.spellChecker.suggest(cleaned, 5) || [];
-    if (suggestions.length === 0) {
-      return false;
-    }
-
-    const minimumDistance = suggestions.reduce((smallest, suggestion) => {
-      const distance = levenshteinDistance(normalized, String(suggestion).toLowerCase());
-      return Math.min(smallest, distance);
-    }, Number.POSITIVE_INFINITY);
-
-    return minimumDistance <= 2;
   }
 
-  if (EXTENDED_DICTIONARY_WORDS.has(normalized)) {
+  // Step 3: If not in standard dictionary, allow common business/finance vocabulary.
+  if (businessCandidates.some((candidate) => FINANCE_ACCOUNTING_TERMS.has(candidate))) {
     return false;
   }
 
-  const fallbackCandidates = [
-    normalized,
-    normalized.replace(/(ing|ed|ly|er|est)$/i, ""),
-    normalized.replace(/ies$/i, "y"),
-    normalized.replace(/es$/i, ""),
-    normalized.replace(/s$/i, "")
-  ].filter((value, index, list) => value.length > 2 && list.indexOf(value) === index);
-
-  if (fallbackCandidates.some((candidate) => EXTENDED_DICTIONARY_WORDS.has(candidate))) {
+  // If the main dictionary is unavailable, prefer under-reporting to avoid false positives.
+  if (!state.spellCheckerReady || !state.spellChecker) {
     return false;
   }
 
-  return hasObviousTypoPattern(cleaned);
+  // Step 4: Not found in either source.
+  return true;
 }
 
 function evaluateSpellRow(entry, selectedColumns) {
