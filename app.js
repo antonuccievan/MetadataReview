@@ -601,12 +601,55 @@ function tokenize(value) {
     .filter(Boolean);
 }
 
+function levenshteinDistance(a, b) {
+  const source = String(a ?? "");
+  const target = String(b ?? "");
+  if (source === target) return 0;
+  if (!source.length) return target.length;
+  if (!target.length) return source.length;
+
+  const matrix = Array.from({ length: source.length + 1 }, (_, row) => {
+    const values = new Array(target.length + 1).fill(0);
+    values[0] = row;
+    return values;
+  });
+
+  for (let col = 0; col <= target.length; col += 1) {
+    matrix[0][col] = col;
+  }
+
+  for (let row = 1; row <= source.length; row += 1) {
+    for (let col = 1; col <= target.length; col += 1) {
+      const substitutionCost = source[row - 1] === target[col - 1] ? 0 : 1;
+      matrix[row][col] = Math.min(
+        matrix[row - 1][col] + 1,
+        matrix[row][col - 1] + 1,
+        matrix[row - 1][col - 1] + substitutionCost
+      );
+    }
+  }
+
+  return matrix[source.length][target.length];
+}
+
+function hasObviousTypoPattern(token) {
+  const normalized = String(token ?? "").toLowerCase();
+  if (!normalized) return false;
+
+  if (/(.)\1\1/.test(normalized)) return true;
+  if (!/[aeiouy]/.test(normalized) && normalized.length >= 6) return true;
+  if (/[bcdfghjklmnpqrstvwxyz]{6,}/.test(normalized)) return true;
+
+  return false;
+}
+
 function looksMisspelled(token) {
   if (!token) return false;
   if (/\d/.test(token)) return false;
   if (token.length <= 2) return false;
   if (/^[A-Z]{2,6}$/.test(token)) return false;
   if (/^[A-Za-z]+[A-Z][A-Za-z]*$/.test(token)) return false;
+  if (/^[A-Z][a-z]+(?:'[A-Za-z]+)?$/.test(token)) return false;
 
   const cleaned = token.replace(/^'+|'+$/g, "");
   const normalized = cleaned.toLowerCase().replace(/'(s|d|ll|re|ve|m|t)$/i, "");
@@ -631,10 +674,18 @@ function looksMisspelled(token) {
       return false;
     }
 
-    return true;
-  }
+    const suggestions = state.spellChecker.suggest(cleaned, 5) || [];
+    if (suggestions.length === 0) {
+      return false;
+    }
 
-  if (cleaned.length <= 2) return false;
+    const minimumDistance = suggestions.reduce((smallest, suggestion) => {
+      const distance = levenshteinDistance(normalized, String(suggestion).toLowerCase());
+      return Math.min(smallest, distance);
+    }, Number.POSITIVE_INFINITY);
+
+    return minimumDistance <= 2;
+  }
 
   if (EXTENDED_DICTIONARY_WORDS.has(normalized)) {
     return false;
@@ -648,7 +699,11 @@ function looksMisspelled(token) {
     normalized.replace(/s$/i, "")
   ].filter((value, index, list) => value.length > 2 && list.indexOf(value) === index);
 
-  return !fallbackCandidates.some((candidate) => EXTENDED_DICTIONARY_WORDS.has(candidate));
+  if (fallbackCandidates.some((candidate) => EXTENDED_DICTIONARY_WORDS.has(candidate))) {
+    return false;
+  }
+
+  return hasObviousTypoPattern(cleaned);
 }
 
 function evaluateSpellRow(entry, selectedColumns) {
