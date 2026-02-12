@@ -221,6 +221,20 @@ function waitForPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+function setExportButtonLoading(loading) {
+  if (!exportExcelBtn) return;
+  if (loading) {
+    exportExcelBtn.disabled = true;
+    exportExcelBtn.innerHTML = '<span class="button-spinner" aria-hidden="true"></span> Exporting to Excel...';
+    exportExcelBtn.setAttribute("aria-busy", "true");
+    return;
+  }
+
+  exportExcelBtn.innerHTML = "📤 Export Report to Excel";
+  exportExcelBtn.removeAttribute("aria-busy");
+  exportExcelBtn.disabled = state.filteredRows.length === 0;
+}
+
 async function initializeSpellChecker() {
   if (typeof window.Typo !== "function") {
     return;
@@ -1100,67 +1114,82 @@ function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
   return rows;
 }
 
-function exportCurrentReportToExcel() {
+async function exportCurrentReportToExcel() {
   if (!state.workbook || !window.XLSX) return;
+  const showExportSpinnerDelayMs = 200;
+  let showSpinnerTimer = null;
 
-  const visibleRows = computeVisibleRows();
-  const { rows: reportedRows, findingsByRowId, statusByRowId, selectedColumns } = applyReportFilter(visibleRows);
+  try {
+    showSpinnerTimer = setTimeout(() => {
+      setExportButtonLoading(true);
+    }, showExportSpinnerDelayMs);
 
-  if (reportedRows.length === 0) return;
+    await waitForPaint();
 
-  const exportedAt = new Date();
-  const exportedAtDisplay = exportedAt.toLocaleString();
-  const exportedAtFileSegment = exportedAt.toISOString().replace(/[:]/g, "-").replace(/\..+$/, "");
+    const visibleRows = computeVisibleRows();
+    const { rows: reportedRows, findingsByRowId, statusByRowId, selectedColumns } = applyReportFilter(visibleRows);
 
-  const selectedSheet = sheetSelect?.value || "";
-  const reportColumns =
-    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
-      ? selectedColumns
-      : state.headers.slice(1);
-  const statusFilterLabel =
-    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
-      ? state.spellStatusFilter.toUpperCase()
-      : "";
+    if (reportedRows.length === 0) return;
 
-  const reportHeaders =
-    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
-      ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
-      : ["Hierarchy", ...reportColumns];
+    const exportedAt = new Date();
+    const exportedAtDisplay = exportedAt.toLocaleString();
+    const exportedAtFileSegment = exportedAt.toISOString().replace(/[:]/g, "-").replace(/\..+$/, "");
 
-  const tableRows = reportedRows.map((entry) => {
-    const base = [entry.hierarchyPath || entry.hierarchyLabel];
-    if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
-      base.push(statusByRowId.get(entry.id) || "Pass");
-      base.push((findingsByRowId.get(entry.id) || []).join(" | "));
-    }
-    reportColumns.forEach((header) => {
-      base.push(String(entry.row[header] ?? ""));
+    const selectedSheet = sheetSelect?.value || "";
+    const reportColumns =
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
+        ? selectedColumns
+        : state.headers.slice(1);
+    const statusFilterLabel =
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
+        ? state.spellStatusFilter.toUpperCase()
+        : "";
+
+    const reportHeaders =
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
+        ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
+        : ["Hierarchy", ...reportColumns];
+
+    const tableRows = reportedRows.map((entry) => {
+      const base = [entry.hierarchyPath || entry.hierarchyLabel];
+      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
+        base.push(statusByRowId.get(entry.id) || "Pass");
+        base.push((findingsByRowId.get(entry.id) || []).join(" | "));
+      }
+      reportColumns.forEach((header) => {
+        base.push(String(entry.row[header] ?? ""));
+      });
+      return base;
     });
-    return base;
-  });
 
-  const metaRows = [
-    ["Export Details", "Value"],
-    ["Exported At", exportedAtDisplay],
-    ["Uploaded File", state.uploadedFileName || "Unknown file"],
-    ["Sheet", selectedSheet || "Unknown sheet"],
-    ["Report", state.reportSummary],
-    ["Parent Column", `Column ${state.parentColumnNumber}`],
-    ["Child Column", `Column ${state.childColumnNumber}`],
-    ...getReportParameterRows(state.reportType, reportColumns, statusFilterLabel),
-    []
-  ];
+    const metaRows = [
+      ["Export Details", "Value"],
+      ["Exported At", exportedAtDisplay],
+      ["Uploaded File", state.uploadedFileName || "Unknown file"],
+      ["Sheet", selectedSheet || "Unknown sheet"],
+      ["Report", state.reportSummary],
+      ["Parent Column", `Column ${state.parentColumnNumber}`],
+      ["Child Column", `Column ${state.childColumnNumber}`],
+      ...getReportParameterRows(state.reportType, reportColumns, statusFilterLabel),
+      []
+    ];
 
-  const worksheet = XLSX.utils.aoa_to_sheet([...metaRows, reportHeaders, ...tableRows]);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Report Export");
+    const worksheet = XLSX.utils.aoa_to_sheet([...metaRows, reportHeaders, ...tableRows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Report Export");
 
-  const safeFileName = (state.uploadedFileName || "report")
-    .replace(/\.[^.]+$/, "")
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "report";
-  const exportFileName = `${safeFileName}-${state.reportType}-export-${exportedAtFileSegment}.xlsx`;
-  XLSX.writeFile(workbook, exportFileName);
+    const safeFileName = (state.uploadedFileName || "report")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "report";
+    const exportFileName = `${safeFileName}-${state.reportType}-export-${exportedAtFileSegment}.xlsx`;
+    XLSX.writeFile(workbook, exportFileName);
+  } catch (error) {
+    tableWrap.innerHTML = `<div class="empty">Unable to export report: ${escapeHtml(error?.message || "unknown error")}</div>`;
+  } finally {
+    if (showSpinnerTimer) clearTimeout(showSpinnerTimer);
+    setExportButtonLoading(false);
+  }
 }
 
 function escapeHtml(input) {
