@@ -1003,9 +1003,12 @@ function renderTable() {
   const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
   const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
   const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
+  const includeFindingsColumn = state.reportType === "spell" || state.reportType === "space";
   const headerSet = isColumnReport
     ? includeStatusColumns
-      ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders]
+      ? includeFindingsColumn
+        ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders]
+        : ["Hierarchy", "Status", ...sourceHeaders]
       : ["Hierarchy", ...sourceHeaders]
     : state.headers;
   const headerCells = headerSet.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
@@ -1030,7 +1033,7 @@ function renderTable() {
         </td>
       `;
 
-      const findingCell = !includeStatusColumns ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
+      const findingCell = !includeFindingsColumn ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
       const statusCell = !includeStatusColumns ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
 
@@ -1146,14 +1149,18 @@ async function exportCurrentReportToExcel() {
         : "";
 
     const reportHeaders =
-      state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
+      state.reportType === "spell" || state.reportType === "space"
         ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
-        : ["Hierarchy", ...reportColumns];
+        : state.reportType === "constraint"
+          ? ["Hierarchy", "Status", ...reportColumns]
+          : ["Hierarchy", ...reportColumns];
 
     const tableRows = reportedRows.map((entry) => {
       const base = [entry.hierarchyPath || entry.hierarchyLabel];
       if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
         base.push(statusByRowId.get(entry.id) || "Pass");
+      }
+      if (state.reportType === "spell" || state.reportType === "space") {
         base.push((findingsByRowId.get(entry.id) || []).join(" | "));
       }
       reportColumns.forEach((header) => {
