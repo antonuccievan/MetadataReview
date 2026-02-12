@@ -1114,6 +1114,27 @@ function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
   return rows;
 }
 
+const EXCEL_CELL_TEXT_LIMIT = 32767;
+
+function enforceExcelCellTextLimit(value) {
+  if (typeof value !== "string") return { value, wasTruncated: false };
+  if (value.length <= EXCEL_CELL_TEXT_LIMIT) return { value, wasTruncated: false };
+  return { value: value.slice(0, EXCEL_CELL_TEXT_LIMIT), wasTruncated: true };
+}
+
+function enforceExcelTextLimitForRows(rows) {
+  let truncatedCellCount = 0;
+  const limitedRows = rows.map((row) =>
+    row.map((cell) => {
+      const { value, wasTruncated } = enforceExcelCellTextLimit(cell);
+      if (wasTruncated) truncatedCellCount += 1;
+      return value;
+    })
+  );
+
+  return { rows: limitedRows, truncatedCellCount };
+}
+
 async function exportCurrentReportToExcel() {
   if (!state.workbook || !window.XLSX) return;
   const showExportSpinnerDelayMs = 200;
@@ -1174,7 +1195,12 @@ async function exportCurrentReportToExcel() {
       []
     ];
 
-    const worksheet = XLSX.utils.aoa_to_sheet([...metaRows, reportHeaders, ...tableRows]);
+    const { rows: exportRows, truncatedCellCount } = enforceExcelTextLimitForRows([...metaRows, reportHeaders, ...tableRows]);
+    if (truncatedCellCount > 0) {
+      exportRows.splice(1, 0, ["Truncated Cells", String(truncatedCellCount)]);
+    }
+
+    const worksheet = XLSX.utils.aoa_to_sheet(exportRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Report Export");
 
