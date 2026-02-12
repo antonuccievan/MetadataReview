@@ -61,6 +61,10 @@ const state = {
   spellStatusFilter: "all",
   filteredRows: [],
   findingsByRowId: new Map(),
+  statusByRowId: new Map(),
+  selectedReportColumns: [],
+  reportSummary: "Review",
+  uploadedFileName: "",
   spellChecker: null,
   spellCheckerReady: false,
   spellAssessmentCache: new Map()
@@ -83,6 +87,7 @@ const spellScorecard = document.getElementById("spellScorecard");
 const scoreAllBtn = document.getElementById("scoreAllBtn");
 const scorePassBtn = document.getElementById("scorePassBtn");
 const scoreFailBtn = document.getElementById("scoreFailBtn");
+const exportExcelBtn = document.getElementById("exportExcelBtn");
 
 fileInput?.addEventListener("change", handleFileUpload);
 sheetSelect?.addEventListener("change", loadSheetRows);
@@ -98,6 +103,7 @@ collapseAllBtn?.addEventListener("click", () => {
 parentColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 reportSelect?.addEventListener("change", handleReportTypeChange);
+exportExcelBtn?.addEventListener("click", exportCurrentReportToExcel);
 spellColumnSelect?.addEventListener("change", () => {
   const selectedOptions = [...spellColumnSelect.selectedOptions];
   state.reportColumns.clear();
@@ -245,6 +251,7 @@ function applyTheme(theme) {
 async function handleFileUpload(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  state.uploadedFileName = file.name;
 
   try {
     setLoading(true, "Reading workbook...");
@@ -829,6 +836,8 @@ function renderTable() {
   const { rows: reportedRows, findingsByRowId, statusByRowId, passCount, failCount, selectedColumns } = applyReportFilter(visibleRows);
   state.filteredRows = reportedRows;
   state.findingsByRowId = findingsByRowId;
+  state.statusByRowId = statusByRowId;
+  state.selectedReportColumns = [...selectedColumns];
 
   if (state.reportType === "spell" || state.reportType === "space") {
     updateScorecardButtons(passCount, failCount);
@@ -843,6 +852,7 @@ function renderTable() {
       : state.reportType === "space"
         ? `Space Check · ${selectedColumns.length} column(s)`
         : "Review";
+  state.reportSummary = reportSummary;
 
   stats.innerHTML = `
     <span>Headers: <strong>row ${state.headerRowNumber ?? "?"}</strong></span>
@@ -903,6 +913,10 @@ function renderTable() {
     </table>
   `;
 
+  if (exportExcelBtn) {
+    exportExcelBtn.disabled = rowsToRender.length === 0;
+  }
+
   tableWrap.querySelectorAll(".twisty[data-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.getAttribute("data-id");
@@ -921,6 +935,65 @@ function renderTable() {
       renderTable();
     });
   });
+}
+
+function exportCurrentReportToExcel() {
+  if (!state.workbook || state.filteredRows.length === 0 || !window.XLSX) return;
+
+  const exportedAt = new Date();
+  const exportedAtDisplay = exportedAt.toLocaleString();
+  const exportedAtFileSegment = exportedAt.toISOString().replace(/[:]/g, "-").replace(/\..+$/, "");
+
+  const selectedSheet = sheetSelect?.value || "";
+  const reportColumns =
+    state.reportType === "spell" || state.reportType === "space"
+      ? state.selectedReportColumns
+      : state.headers.slice(1);
+  const statusFilterLabel =
+    state.reportType === "spell" || state.reportType === "space"
+      ? state.spellStatusFilter.toUpperCase()
+      : "N/A";
+
+  const reportHeaders =
+    state.reportType === "spell" || state.reportType === "space"
+      ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
+      : ["Hierarchy", ...reportColumns];
+
+  const tableRows = state.filteredRows.map((entry) => {
+    const base = [entry.hierarchyPath || entry.hierarchyLabel];
+    if (state.reportType === "spell" || state.reportType === "space") {
+      base.push(state.statusByRowId.get(entry.id) || "Pass");
+      base.push((state.findingsByRowId.get(entry.id) || []).join(" | "));
+    }
+    reportColumns.forEach((header) => {
+      base.push(String(entry.row[header] ?? ""));
+    });
+    return base;
+  });
+
+  const metaRows = [
+    ["Export Details", "Value"],
+    ["Exported At", exportedAtDisplay],
+    ["Uploaded File", state.uploadedFileName || "Unknown file"],
+    ["Sheet", selectedSheet || "Unknown sheet"],
+    ["Report", state.reportSummary],
+    ["Parent Column", `Column ${state.parentColumnNumber}`],
+    ["Child Column", `Column ${state.childColumnNumber}`],
+    ["Selected Report Columns", reportColumns.join(", ") || "None"],
+    ["Status Filter", statusFilterLabel],
+    []
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet([...metaRows, reportHeaders, ...tableRows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Report Export");
+
+  const safeFileName = (state.uploadedFileName || "report")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "report";
+  const exportFileName = `${safeFileName}-${state.reportType}-export-${exportedAtFileSegment}.xlsx`;
+  XLSX.writeFile(workbook, exportFileName);
 }
 
 function escapeHtml(input) {

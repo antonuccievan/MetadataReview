@@ -121,6 +121,18 @@
       margin-top: 0.75rem;
     }
 
+    .export-btn {
+      background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+      border-color: #16a34a;
+      color: #14532d;
+    }
+
+    :root[data-theme="dark"] .export-btn {
+      background: linear-gradient(140deg, #14532d, #166534);
+      border-color: #4ade80;
+      color: #dcfce7;
+    }
+
     .report-config {
       margin-top: 0.9rem;
       padding-top: 0.9rem;
@@ -386,6 +398,7 @@
       <div class="button-row">
         <button id="expandAllBtn" disabled>Expand all</button>
         <button id="collapseAllBtn" disabled>Collapse groups</button>
+        <button id="exportExcelBtn" class="export-btn" disabled>📤 Export Report to Excel</button>
       </div>
 
       <div class="report-config">
