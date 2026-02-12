@@ -743,10 +743,9 @@ function evaluateSpellRow(entry, selectedColumns) {
     const assessments = [];
     [...new Set(tokenize(value))].forEach((token) => {
       const assessment = assessSpelling(token);
-      if (!assessment.misspelled) return;
+      if (!assessment.misspelled || assessment.confidenceScore < SPELL_CONFIDENCE_THRESHOLDS.high) return;
       const confidencePercent = `${Math.round(assessment.confidenceScore * 100)}%`;
-      const suggestionText = assessment.suggestion ? `, suggestion: ${assessment.suggestion}` : "";
-      assessments.push(`${token} (${assessment.confidenceLabel} ${confidencePercent}${suggestionText})`);
+      assessments.push(`${token} (${assessment.confidenceLabel} ${confidencePercent})`);
     });
 
     if (assessments.length > 0) {
