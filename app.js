@@ -379,7 +379,7 @@ function syncReportParamVisibility() {
   const showColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
   const isConstraintReport = state.reportType === "constraint";
   spellOptionsWrap.hidden = !showColumnReport;
-  spellScorecard.hidden = !showColumnReport || isConstraintReport;
+  spellScorecard.hidden = !showColumnReport;
   if (constraintParamsWrap) {
     constraintParamsWrap.hidden = !isConstraintReport;
   }
@@ -839,7 +839,7 @@ function evaluateSpaceRow(entry, selectedColumns) {
 
 function applyReportFilter(rows) {
   const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  if ((state.reportType !== "spell" && state.reportType !== "space") || selectedColumns.length === 0) {
+  if ((state.reportType !== "spell" && state.reportType !== "space" && state.reportType !== "constraint") || selectedColumns.length === 0) {
     return {
       rows,
       findingsByRowId: new Map(),
@@ -855,17 +855,92 @@ function applyReportFilter(rows) {
   let passCount = 0;
   let failCount = 0;
 
-  rows.forEach((entry) => {
-    const issues = state.reportType === "space" ? evaluateSpaceRow(entry, selectedColumns) : evaluateSpellRow(entry, selectedColumns);
-    const status = issues.length > 0 ? "Fail" : "Pass";
-    statusByRowId.set(entry.id, status);
-    if (issues.length > 0) {
-      findingsByRowId.set(entry.id, issues);
-      failCount += 1;
+  if (state.reportType === "constraint") {
+    const selectedHeader = selectedColumns[0];
+    const topLevel = normalizeHierarchyValue(state.constraintTopLevel).toLowerCase();
+    const noneMember = normalizeHierarchyValue(state.constraintNoneMember).toLowerCase();
+    const totalConstraintLevel = normalizeHierarchyValue(state.constraintTotalLevel).toLowerCase();
+    const rowById = new Map(rows.map((entry) => [entry.id, entry]));
+    const issuesByRowId = new Map();
+
+    const addIssue = (rowId, message) => {
+      if (!issuesByRowId.has(rowId)) issuesByRowId.set(rowId, new Set());
+      issuesByRowId.get(rowId).add(message);
+    };
+
+    if (!topLevel || !noneMember || !totalConstraintLevel) {
+      rows.forEach((entry) => {
+        const status = "Fail";
+        statusByRowId.set(entry.id, status);
+        findingsByRowId.set(entry.id, ["Constraint parameters required: Top Level, None Member, and Total Constraint Level."]);
+      });
+      failCount = rows.length;
     } else {
-      passCount += 1;
+      const isAllowedParentConstraint = (baseConstraint, parentConstraint) => {
+        if (baseConstraint === noneMember) {
+          return parentConstraint === noneMember || parentConstraint === topLevel;
+        }
+        return parentConstraint === baseConstraint || parentConstraint === totalConstraintLevel || parentConstraint === topLevel;
+      };
+
+      const baseMembers = rows.filter((entry) => !rows.some((candidate) => candidate.parentId === entry.id));
+
+      baseMembers.forEach((baseEntry) => {
+        const baseConstraintRaw = normalizeHierarchyValue(baseEntry.row[selectedHeader]);
+        const baseConstraint = baseConstraintRaw.toLowerCase();
+        let currentParentId = baseEntry.parentId;
+
+        while (currentParentId) {
+          const parentEntry = rowById.get(currentParentId);
+          if (!parentEntry) break;
+
+          const parentConstraintRaw = normalizeHierarchyValue(parentEntry.row[selectedHeader]);
+          const parentConstraint = parentConstraintRaw.toLowerCase();
+
+          if (!isAllowedParentConstraint(baseConstraint, parentConstraint)) {
+            addIssue(
+              parentEntry.id,
+              `Base "${baseEntry.hierarchyLabel}" is "${baseConstraintRaw || "(blank)"}" but parent must be ${
+                baseConstraint === noneMember
+                  ? `"${state.constraintNoneMember}" or "${state.constraintTopLevel}"`
+                  : `"${baseConstraintRaw || "(blank)"}", "${state.constraintTotalLevel}", or "${state.constraintTopLevel}"`
+              }. Found "${parentConstraintRaw || "(blank)"}".`
+            );
+            addIssue(
+              baseEntry.id,
+              `Roll-up mismatch at parent "${parentEntry.hierarchyLabel}" with value "${parentConstraintRaw || "(blank)"}".`
+            );
+          }
+
+          currentParentId = parentEntry.parentId;
+        }
+      });
+
+      rows.forEach((entry) => {
+        const issues = [...(issuesByRowId.get(entry.id) || [])];
+        const status = issues.length > 0 ? "Fail" : "Pass";
+        statusByRowId.set(entry.id, status);
+        if (issues.length > 0) {
+          findingsByRowId.set(entry.id, issues);
+          failCount += 1;
+        } else {
+          passCount += 1;
+        }
+      });
     }
-  });
+  } else {
+    rows.forEach((entry) => {
+      const issues = state.reportType === "space" ? evaluateSpaceRow(entry, selectedColumns) : evaluateSpellRow(entry, selectedColumns);
+      const status = issues.length > 0 ? "Fail" : "Pass";
+      statusByRowId.set(entry.id, status);
+      if (issues.length > 0) {
+        findingsByRowId.set(entry.id, issues);
+        failCount += 1;
+      } else {
+        passCount += 1;
+      }
+    });
+  }
 
   const filteredRows = rows.filter((entry) => {
     const status = statusByRowId.get(entry.id);
@@ -900,7 +975,7 @@ function renderTable() {
   state.statusByRowId = statusByRowId;
   state.selectedReportColumns = [...selectedColumns];
 
-  if (state.reportType === "spell" || state.reportType === "space") {
+  if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
     updateScorecardButtons(passCount, failCount);
   }
 
@@ -928,7 +1003,7 @@ function renderTable() {
 
   const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
   const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
-  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space";
+  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
   const headerSet = isColumnReport
     ? includeStatusColumns
       ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders]
@@ -1018,18 +1093,18 @@ function exportCurrentReportToExcel() {
       ? state.selectedReportColumns
       : state.headers.slice(1);
   const statusFilterLabel =
-    state.reportType === "spell" || state.reportType === "space"
+    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
       ? state.spellStatusFilter.toUpperCase()
       : "N/A";
 
   const reportHeaders =
-    state.reportType === "spell" || state.reportType === "space"
+    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
       ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
       : ["Hierarchy", ...reportColumns];
 
   const tableRows = state.filteredRows.map((entry) => {
     const base = [entry.hierarchyPath || entry.hierarchyLabel];
-    if (state.reportType === "spell" || state.reportType === "space") {
+    if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
       base.push(state.statusByRowId.get(entry.id) || "Pass");
       base.push((state.findingsByRowId.get(entry.id) || []).join(" | "));
     }
