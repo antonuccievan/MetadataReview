@@ -26,6 +26,23 @@ const FINANCE_ACCOUNTING_TERMS = new Set([
   "vendors","workingcapital","writeoff","writeoffs","yearend","building","buildings"
 ]);
 
+const EVERYDAY_ENGLISH_TERMS = new Set([
+  "about","above","across","after","again","against","almost","along","already","also","always","among","another","answer","around","because",
+  "before","behind","below","better","between","beyond","billion","business","buyer","calendar","called","cannot","change","children","client",
+  "company","complete","country","customer","daily","dashboard","data","department","detail","different","document","during","effective","email",
+  "employee","estimate","example","family","final","future","growth","group","health","history","holiday","important","include","increase","industry",
+  "information","inside","issue","items","language","large","latest","letter","little","manage","manager","market","meeting","member","message",
+  "million","minute","modern","money","monthly","morning","network","number","office","online","option","outside","payment","people","period",
+  "personal","policy","project","quality","quarter","question","recent","record","report","result","review","safety","school","service","simple",
+  "since","small","social","solution","source","special","standard","status","street","strong","support","system","target","team","today","tomorrow",
+  "total","travel","update","value","version","weekly","within","without","world","yearly"
+]);
+
+const SPELL_CONFIDENCE_THRESHOLDS = {
+  high: 0.8,
+  medium: 0.6
+};
+
 const state = {
   workbook: null,
   dataRows: [],
@@ -45,7 +62,8 @@ const state = {
   filteredRows: [],
   findingsByRowId: new Map(),
   spellChecker: null,
-  spellCheckerReady: false
+  spellCheckerReady: false,
+  spellAssessmentCache: new Map()
 };
 
 const fileInput = document.getElementById("fileInput");
@@ -113,7 +131,7 @@ function updateScorecardButtons(passCount, failCount) {
 }
 
 function isMisspelledToken(token) {
-  return looksMisspelled(token);
+  return assessSpelling(token).misspelled;
 }
 
 function markMisspelledWords(input) {
@@ -176,12 +194,13 @@ async function initializeSpellChecker() {
 
     state.spellChecker = new window.Typo("en_US", affData, dicData, { platform: "any" });
     state.spellCheckerReady = true;
+    state.spellAssessmentCache.clear();
 
     if (state.reportType === "spell") {
       renderTable();
     }
   } catch {
-    // Fallback behavior is handled in looksMisspelled when dictionary loading fails.
+    // Fallback behavior is handled in assessSpelling when dictionary loading fails.
   }
 }
 
@@ -582,25 +601,84 @@ function tokenize(value) {
     .filter(Boolean);
 }
 
-function looksMisspelled(token) {
-  if (!token) return false;
-  if (/\d/.test(token)) return false;
-
-  const cleaned = token.replace(/^'+|'+$/g, "");
-  const normalized = cleaned.toLowerCase();
-
-  if (normalized.length <= 2) return false;
-
-  const businessCandidates = [
+function getTokenCandidates(normalized) {
+  return [
     normalized,
     normalized.replace(/'(s|d|ll|re|ve|m|t)$/i, ""),
     normalized.replace(/ies$/i, "y"),
     normalized.replace(/es$/i, ""),
     normalized.replace(/s$/i, "")
   ].filter((value, index, values) => value.length > 2 && values.indexOf(value) === index);
+}
 
-  // Step 1 + Step 2: Check standard US English dictionary first.
-  if (state.spellCheckerReady && state.spellChecker) {
+function editDistance(a, b) {
+  const matrix = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i += 1) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
+function findClosestLexiconWord(token) {
+  const referenceWords = new Set([...FINANCE_ACCOUNTING_TERMS, ...EVERYDAY_ENGLISH_TERMS]);
+  let closestWord = "";
+  let smallestDistance = Number.POSITIVE_INFINITY;
+
+  referenceWords.forEach((word) => {
+    const distance = editDistance(token, word);
+    if (distance < smallestDistance) {
+      smallestDistance = distance;
+      closestWord = word;
+    }
+  });
+
+  return { word: closestWord, distance: smallestDistance };
+}
+
+function getConfidenceLabel(score) {
+  if (score >= SPELL_CONFIDENCE_THRESHOLDS.high) return "High";
+  if (score >= SPELL_CONFIDENCE_THRESHOLDS.medium) return "Medium";
+  return "Low";
+}
+
+function assessSpelling(token) {
+  if (!token) {
+    return { misspelled: false, confidenceScore: 0, confidenceLabel: "Low", suggestion: "" };
+  }
+  if (/\d/.test(token)) {
+    return { misspelled: false, confidenceScore: 0, confidenceLabel: "Low", suggestion: "" };
+  }
+
+  const cleaned = token.replace(/^'+|'+$/g, "");
+  const normalized = cleaned.toLowerCase();
+  if (!normalized) {
+    return { misspelled: false, confidenceScore: 0, confidenceLabel: "Low", suggestion: "" };
+  }
+
+  if (state.spellAssessmentCache.has(normalized)) {
+    return state.spellAssessmentCache.get(normalized);
+  }
+
+  const fallbackResult = { misspelled: false, confidenceScore: 0, confidenceLabel: "Low", suggestion: "" };
+
+  if (normalized.length <= 2) {
+    state.spellAssessmentCache.set(normalized, fallbackResult);
+    return fallbackResult;
+  }
+
+  const businessCandidates = getTokenCandidates(normalized);
+  const inBusinessLexicon = businessCandidates.some((candidate) => FINANCE_ACCOUNTING_TERMS.has(candidate));
+  const inEverydayLexicon = businessCandidates.some((candidate) => EVERYDAY_ENGLISH_TERMS.has(candidate));
+  const inSupplementalLexicon = inBusinessLexicon || inEverydayLexicon;
+  const dictionaryAvailable = state.spellCheckerReady && Boolean(state.spellChecker);
+
+  if (dictionaryAvailable) {
     const spellCandidates = [
       cleaned,
       normalized,
@@ -609,22 +687,51 @@ function looksMisspelled(token) {
     ].filter((value, index, values) => value && values.indexOf(value) === index);
 
     if (spellCandidates.some((candidate) => state.spellChecker.check(candidate))) {
-      return false;
+      state.spellAssessmentCache.set(normalized, fallbackResult);
+      return fallbackResult;
     }
   }
 
-  // Step 3: If not in standard dictionary, allow common business/finance vocabulary.
-  if (businessCandidates.some((candidate) => FINANCE_ACCOUNTING_TERMS.has(candidate))) {
-    return false;
+  if (inSupplementalLexicon) {
+    state.spellAssessmentCache.set(normalized, fallbackResult);
+    return fallbackResult;
   }
 
-  // If the main dictionary is unavailable, prefer under-reporting to avoid false positives.
-  if (!state.spellCheckerReady || !state.spellChecker) {
-    return false;
+  let suggestion = "";
+  let distance = Number.POSITIVE_INFINITY;
+
+  if (dictionaryAvailable) {
+    const suggestions = state.spellChecker.suggest(cleaned, 5) || [];
+    suggestion = suggestions[0] || "";
+    if (suggestion) {
+      distance = editDistance(normalized, suggestion.toLowerCase());
+    }
   }
 
-  // Step 4: Not found in either source.
-  return true;
+  if (!suggestion) {
+    const nearest = findClosestLexiconWord(normalized);
+    if (nearest.word) {
+      suggestion = nearest.word.charAt(0).toUpperCase() + nearest.word.slice(1);
+      distance = nearest.distance;
+    }
+  }
+
+  let confidenceScore = 0.55;
+  if (normalized.length >= 5) confidenceScore += 0.1;
+  if (distance <= 1) confidenceScore += 0.28;
+  else if (distance === 2) confidenceScore += 0.2;
+  else if (distance === 3) confidenceScore += 0.1;
+  if (!dictionaryAvailable) confidenceScore -= 0.1;
+  confidenceScore = Math.max(0.35, Math.min(0.98, confidenceScore));
+
+  const result = {
+    misspelled: true,
+    confidenceScore,
+    confidenceLabel: getConfidenceLabel(confidenceScore),
+    suggestion
+  };
+  state.spellAssessmentCache.set(normalized, result);
+  return result;
 }
 
 function evaluateSpellRow(entry, selectedColumns) {
@@ -633,9 +740,17 @@ function evaluateSpellRow(entry, selectedColumns) {
     const value = String(entry.row[header] ?? "");
     if (!value.trim()) return;
 
-    const misspelled = [...new Set(tokenize(value).filter(looksMisspelled))];
-    if (misspelled.length > 0) {
-      issues.push(`${header}: ${misspelled.join(", ")}`);
+    const assessments = [];
+    [...new Set(tokenize(value))].forEach((token) => {
+      const assessment = assessSpelling(token);
+      if (!assessment.misspelled) return;
+      const confidencePercent = `${Math.round(assessment.confidenceScore * 100)}%`;
+      const suggestionText = assessment.suggestion ? `, suggestion: ${assessment.suggestion}` : "";
+      assessments.push(`${token} (${assessment.confidenceLabel} ${confidencePercent}${suggestionText})`);
+    });
+
+    if (assessments.length > 0) {
+      issues.push(`${header}: ${assessments.join(", ")}`);
     }
   });
 
