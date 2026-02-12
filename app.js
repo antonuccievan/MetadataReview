@@ -64,6 +64,9 @@ const state = {
   statusByRowId: new Map(),
   selectedReportColumns: [],
   reportSummary: "Review",
+  constraintTopLevel: "",
+  constraintNoneMember: "",
+  constraintTotalLevel: "",
   uploadedFileName: "",
   spellChecker: null,
   spellCheckerReady: false,
@@ -83,6 +86,10 @@ const reportSelect = document.getElementById("reportSelect");
 const spellOptionsWrap = document.getElementById("spellOptionsWrap");
 const spellColumnSelect = document.getElementById("spellColumnSelect");
 const reportColumnsLabel = document.getElementById("reportColumnsLabel");
+const constraintParamsWrap = document.getElementById("constraintParamsWrap");
+const constraintTopLevelInput = document.getElementById("constraintTopLevelInput");
+const constraintNoneMemberInput = document.getElementById("constraintNoneMemberInput");
+const constraintTotalLevelInput = document.getElementById("constraintTotalLevelInput");
 const spellScorecard = document.getElementById("spellScorecard");
 const scoreAllBtn = document.getElementById("scoreAllBtn");
 const scorePassBtn = document.getElementById("scorePassBtn");
@@ -105,7 +112,15 @@ childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 reportSelect?.addEventListener("change", handleReportTypeChange);
 exportExcelBtn?.addEventListener("click", exportCurrentReportToExcel);
 spellColumnSelect?.addEventListener("change", () => {
-  const selectedOptions = [...spellColumnSelect.selectedOptions];
+  let selectedOptions = [...spellColumnSelect.selectedOptions];
+  if (state.reportType === "constraint" && selectedOptions.length > 1) {
+    const selectedValue = selectedOptions[selectedOptions.length - 1].value;
+    [...spellColumnSelect.options].forEach((option) => {
+      option.selected = option.value === selectedValue;
+    });
+    selectedOptions = [...spellColumnSelect.selectedOptions];
+  }
+
   state.reportColumns.clear();
   selectedOptions.forEach((option) => {
     const columnIndex = Number(option.value);
@@ -114,6 +129,27 @@ spellColumnSelect?.addEventListener("change", () => {
     }
   });
   renderTable();
+});
+
+constraintTopLevelInput?.addEventListener("input", () => {
+  state.constraintTopLevel = constraintTopLevelInput.value;
+  if (state.reportType === "constraint") {
+    renderTable();
+  }
+});
+
+constraintNoneMemberInput?.addEventListener("input", () => {
+  state.constraintNoneMember = constraintNoneMemberInput.value;
+  if (state.reportType === "constraint") {
+    renderTable();
+  }
+});
+
+constraintTotalLevelInput?.addEventListener("input", () => {
+  state.constraintTotalLevel = constraintTotalLevelInput.value;
+  if (state.reportType === "constraint") {
+    renderTable();
+  }
 });
 
 function setSpellStatusFilter(nextFilter) {
@@ -340,15 +376,25 @@ function populateReportColumns(sourceHeaders) {
 
 function syncReportParamVisibility() {
   if (!spellOptionsWrap || !spellScorecard) return;
-  const showColumnReport = state.reportType === "spell" || state.reportType === "space";
+  const showColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
+  const isConstraintReport = state.reportType === "constraint";
   spellOptionsWrap.hidden = !showColumnReport;
-  spellScorecard.hidden = !showColumnReport;
+  spellScorecard.hidden = !showColumnReport || isConstraintReport;
+  if (constraintParamsWrap) {
+    constraintParamsWrap.hidden = !isConstraintReport;
+  }
   if (reportColumnsLabel) {
     reportColumnsLabel.textContent =
-      state.reportType === "space" ? "Space Check columns (multi-select)" : "Spell check columns (multi-select)";
+      state.reportType === "space"
+        ? "Space Check columns (multi-select)"
+        : state.reportType === "constraint"
+          ? "Constraint Review column (single-select)"
+          : "Spell check columns (multi-select)";
   }
   if (spellColumnSelect) {
     spellColumnSelect.disabled = !showColumnReport;
+    spellColumnSelect.multiple = !isConstraintReport;
+    spellColumnSelect.size = isConstraintReport ? 1 : 6;
   }
 }
 
@@ -362,6 +408,21 @@ function handleReportTypeChange() {
       [...spellColumnSelect.options].forEach((option) => {
         option.selected = false;
       });
+    }
+  } else if (state.reportType === "constraint") {
+    const selectedOptions = spellColumnSelect ? [...spellColumnSelect.selectedOptions] : [];
+    const targetOption = selectedOptions[selectedOptions.length - 1] || spellColumnSelect?.options[0] || null;
+    state.reportColumns.clear();
+    if (spellColumnSelect) {
+      [...spellColumnSelect.options].forEach((option) => {
+        option.selected = Boolean(targetOption) && option.value === targetOption.value;
+      });
+    }
+    if (targetOption) {
+      const columnIndex = Number(targetOption.value);
+      if (Number.isInteger(columnIndex) && columnIndex >= 0 && columnIndex < state.sourceHeaders.length) {
+        state.reportColumns.add(state.sourceHeaders[columnIndex]);
+      }
     }
   }
   syncReportParamVisibility();
@@ -851,6 +912,8 @@ function renderTable() {
       ? `Spell check · ${selectedColumns.length} column(s)`
       : state.reportType === "space"
         ? `Space Check · ${selectedColumns.length} column(s)`
+        : state.reportType === "constraint"
+          ? `Constraint Review · ${selectedColumns.length} column selected`
         : "Review";
   state.reportSummary = reportSummary;
 
@@ -863,9 +926,14 @@ function renderTable() {
     <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const isColumnReport = state.reportType === "spell" || state.reportType === "space";
+  const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint";
   const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
-  const headerSet = isColumnReport ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders] : state.headers;
+  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space";
+  const headerSet = isColumnReport
+    ? includeStatusColumns
+      ? ["Hierarchy", "Status", "Report Findings", ...sourceHeaders]
+      : ["Hierarchy", ...sourceHeaders]
+    : state.headers;
   const headerCells = headerSet.map((h, i) => `<th class="${i === 0 ? "sticky-col" : ""}">${escapeHtml(h)}</th>`).join("");
 
   const bodyRows = rowsToRender
@@ -888,9 +956,9 @@ function renderTable() {
         </td>
       `;
 
-      const findingCell = !isColumnReport ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
+      const findingCell = !includeStatusColumns ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      const statusCell = !isColumnReport ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
+      const statusCell = !includeStatusColumns ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
 
       const rowCells = sourceHeaders
         .map((header) => {
@@ -946,7 +1014,7 @@ function exportCurrentReportToExcel() {
 
   const selectedSheet = sheetSelect?.value || "";
   const reportColumns =
-    state.reportType === "spell" || state.reportType === "space"
+    state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
       ? state.selectedReportColumns
       : state.headers.slice(1);
   const statusFilterLabel =
@@ -981,6 +1049,9 @@ function exportCurrentReportToExcel() {
     ["Child Column", `Column ${state.childColumnNumber}`],
     ["Selected Report Columns", reportColumns.join(", ") || "None"],
     ["Status Filter", statusFilterLabel],
+    ["Enter Top Level", state.constraintTopLevel || ""],
+    ["Enter None Member", state.constraintNoneMember || ""],
+    ["Enter Total Constraint Level", state.constraintTotalLevel || ""],
     []
   ];
 
