@@ -953,22 +953,7 @@ function applyReportFilter(rows) {
 }
 
 function renderTable() {
-  const rowById = new Map(state.rows.map((r) => [r.id, r]));
-
-  state.rows.forEach((entry) => {
-    let current = entry.parentId;
-    let hidden = false;
-    while (current) {
-      if (state.collapsed.has(current)) {
-        hidden = true;
-        break;
-      }
-      current = rowById.get(current)?.parentId || null;
-    }
-    entry.isVisible = !hidden;
-  });
-
-  const visibleRows = state.rows.filter((r) => r.isVisible);
+  const visibleRows = computeVisibleRows();
   const { rows: reportedRows, findingsByRowId, statusByRowId, passCount, failCount, selectedColumns } = applyReportFilter(visibleRows);
   state.filteredRows = reportedRows;
   state.findingsByRowId = findingsByRowId;
@@ -1080,8 +1065,48 @@ function renderTable() {
   });
 }
 
+function computeVisibleRows() {
+  const rowById = new Map(state.rows.map((entry) => [entry.id, entry]));
+
+  state.rows.forEach((entry) => {
+    let current = entry.parentId;
+    let hidden = false;
+    while (current) {
+      if (state.collapsed.has(current)) {
+        hidden = true;
+        break;
+      }
+      current = rowById.get(current)?.parentId || null;
+    }
+    entry.isVisible = !hidden;
+  });
+
+  return state.rows.filter((entry) => entry.isVisible);
+}
+
+function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
+  const rows = [["Selected Report Columns", reportColumns.join(", ") || "None"]];
+
+  if (reportType === "spell" || reportType === "space" || reportType === "constraint") {
+    rows.push(["Status Filter", statusFilterLabel]);
+  }
+
+  if (reportType === "constraint") {
+    rows.push(["Enter Top Level", state.constraintTopLevel || ""]);
+    rows.push(["Enter None Member", state.constraintNoneMember || ""]);
+    rows.push(["Enter Total Constraint Level", state.constraintTotalLevel || ""]);
+  }
+
+  return rows;
+}
+
 function exportCurrentReportToExcel() {
-  if (!state.workbook || state.filteredRows.length === 0 || !window.XLSX) return;
+  if (!state.workbook || !window.XLSX) return;
+
+  const visibleRows = computeVisibleRows();
+  const { rows: reportedRows, findingsByRowId, statusByRowId, selectedColumns } = applyReportFilter(visibleRows);
+
+  if (reportedRows.length === 0) return;
 
   const exportedAt = new Date();
   const exportedAtDisplay = exportedAt.toLocaleString();
@@ -1090,23 +1115,23 @@ function exportCurrentReportToExcel() {
   const selectedSheet = sheetSelect?.value || "";
   const reportColumns =
     state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
-      ? state.selectedReportColumns
+      ? selectedColumns
       : state.headers.slice(1);
   const statusFilterLabel =
     state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
       ? state.spellStatusFilter.toUpperCase()
-      : "N/A";
+      : "";
 
   const reportHeaders =
     state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint"
       ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
       : ["Hierarchy", ...reportColumns];
 
-  const tableRows = state.filteredRows.map((entry) => {
+  const tableRows = reportedRows.map((entry) => {
     const base = [entry.hierarchyPath || entry.hierarchyLabel];
     if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "constraint") {
-      base.push(state.statusByRowId.get(entry.id) || "Pass");
-      base.push((state.findingsByRowId.get(entry.id) || []).join(" | "));
+      base.push(statusByRowId.get(entry.id) || "Pass");
+      base.push((findingsByRowId.get(entry.id) || []).join(" | "));
     }
     reportColumns.forEach((header) => {
       base.push(String(entry.row[header] ?? ""));
@@ -1122,11 +1147,7 @@ function exportCurrentReportToExcel() {
     ["Report", state.reportSummary],
     ["Parent Column", `Column ${state.parentColumnNumber}`],
     ["Child Column", `Column ${state.childColumnNumber}`],
-    ["Selected Report Columns", reportColumns.join(", ") || "None"],
-    ["Status Filter", statusFilterLabel],
-    ["Enter Top Level", state.constraintTopLevel || ""],
-    ["Enter None Member", state.constraintNoneMember || ""],
-    ["Enter Total Constraint Level", state.constraintTotalLevel || ""],
+    ...getReportParameterRows(state.reportType, reportColumns, statusFilterLabel),
     []
   ];
 
