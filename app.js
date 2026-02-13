@@ -432,14 +432,14 @@ function syncReportParamVisibility() {
   if (reportColumnsLabel) {
     reportColumnsLabel.textContent =
       state.reportType === "space"
-        ? "Space Check columns (multi-select)"
+        ? "Space Check Review columns (multi-select)"
         : state.reportType === "case"
           ? "Case Review columns (multi-select)"
           : state.reportType === "special-character"
           ? "Special Character Review columns (multi-select)"
           : isConstraintReportType(state.reportType)
           ? "Constraint Review column (single-select)"
-          : "Spell check columns (multi-select)";
+          : "Spell Check Review columns (multi-select)";
   }
   if (spellColumnSelect) {
     spellColumnSelect.disabled = !showColumnReport;
@@ -1287,9 +1287,9 @@ function renderTable() {
   const maxDepth = Math.max(...rowsToRender.map((r) => r.level), 0);
   const reportSummary =
     state.reportType === "spell"
-      ? `Spell check · ${selectedColumns.length} column(s)`
+      ? `Spell Check Review · ${selectedColumns.length} column(s)`
       : state.reportType === "space"
-        ? `Space Check · ${selectedColumns.length} column(s)`
+        ? `Space Check Review · ${selectedColumns.length} column(s)`
         : state.reportType === "case"
           ? `Case Review · ${selectedColumns.length} column(s)`
         : state.reportType === "special-character"

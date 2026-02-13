@@ -11,7 +11,7 @@ A lightweight browser interface for reviewing metadata exported to Excel.
 - Toggle light/dark theme from the top-right button, with saved preference.
 - See quick depth and visibility stats while exploring.
 - Run report filters with multi-select column checkboxes:
-  - **Spell check** report highlights rows containing likely misspelled words in selected columns.
+  - **Spell Check Review** report highlights rows containing likely misspelled words in selected columns.
   - **Case check** report finds rows that are not in the chosen case mode (Proper/Upper/Lower).
 
 ## Run locally
