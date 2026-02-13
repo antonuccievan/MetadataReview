@@ -429,16 +429,26 @@
         </div>
         <div id="constraintParamsWrap" class="report-params-grid" style="margin-top:0.75rem" hidden>
           <div>
-            <label for="constraintTopLevelInput">Enter Top Level</label>
-            <input id="constraintTopLevelInput" type="text" placeholder="Enter Top Level" />
+            <label for="constraintHierarchyFileInput">Constraint Hierarchy Excel (.xlsx / .xls)</label>
+            <input id="constraintHierarchyFileInput" type="file" accept=".xlsx,.xls" />
           </div>
           <div>
-            <label for="constraintNoneMemberInput">Enter None Member</label>
-            <input id="constraintNoneMemberInput" type="text" placeholder="Enter None Member" />
+            <label for="constraintHierarchySheetSelect">Constraint Hierarchy Sheet</label>
+            <select id="constraintHierarchySheetSelect" disabled>
+              <option value="">Select a sheet</option>
+            </select>
           </div>
           <div>
-            <label for="constraintTotalLevelInput">Enter Total Constraint Level</label>
-            <input id="constraintTotalLevelInput" type="text" placeholder="Enter Total Constraint Level" />
+            <label for="constraintHierarchyParentColumnSelect">Constraint Parent column</label>
+            <select id="constraintHierarchyParentColumnSelect" disabled>
+              <option value="">Select parent column</option>
+            </select>
+          </div>
+          <div>
+            <label for="constraintHierarchyChildColumnSelect">Constraint Child column</label>
+            <select id="constraintHierarchyChildColumnSelect" disabled>
+              <option value="">Select child column</option>
+            </select>
           </div>
         </div>
         <div id="spellOptionsWrap" style="margin-top:0.75rem" hidden>
