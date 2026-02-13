@@ -640,11 +640,14 @@ function buildConstraintHierarchyAncestorMap() {
   const parentIdx = state.constraintHierarchyParentColumnNumber - 1;
   const childIdx = state.constraintHierarchyChildColumnNumber - 1;
   const parentsByChild = new Map();
+  const knownConstraints = new Set();
 
   state.constraintHierarchyRows.forEach((row) => {
     const parent = normalizeHierarchyValue(row[parentIdx]).toLowerCase();
     const child = normalizeHierarchyValue(row[childIdx]).toLowerCase();
+    if (parent) knownConstraints.add(parent);
     if (!child) return;
+    knownConstraints.add(child);
     if (!parentsByChild.has(child)) parentsByChild.set(child, new Set());
     if (parent) parentsByChild.get(child).add(parent);
   });
@@ -670,7 +673,7 @@ function buildConstraintHierarchyAncestorMap() {
     ancestorMap.set(child, getAncestors(child));
   });
 
-  return { parentsByChild, ancestorMap };
+  return { parentsByChild, ancestorMap, knownConstraints };
 }
 
 function buildEntries(sourceRows) {
@@ -1143,12 +1146,25 @@ function applyReportFilter(rows) {
       });
       failCount = rows.length;
     } else {
-      const { ancestorMap } = hierarchyLookup;
+      const { ancestorMap, knownConstraints } = hierarchyLookup;
       const isAllowedParentConstraint = (baseConstraint, parentConstraint) => {
         if (!baseConstraint || !parentConstraint) return false;
         if (parentConstraint === baseConstraint) return true;
         return Boolean(ancestorMap.get(baseConstraint)?.has(parentConstraint));
       };
+
+      if (state.reportType === "constraint-v2") {
+        rows.forEach((entry) => {
+          const constraintRaw = normalizeHierarchyValue(entry.row[selectedHeader]);
+          const constraint = constraintRaw.toLowerCase();
+          if (constraintRaw && !knownConstraints.has(constraint)) {
+            addIssue(
+              entry.id,
+              `Constraint \"${constraintRaw}\" is not found in the imported constraint hierarchy file.`
+            );
+          }
+        });
+      }
 
       const baseMembers = rows.filter((entry) => !rows.some((candidate) => candidate.parentId === entry.id));
 
