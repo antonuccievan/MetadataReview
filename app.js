@@ -68,9 +68,13 @@ const state = {
   statusByRowId: new Map(),
   selectedReportColumns: [],
   reportSummary: "Review",
-  constraintTopLevel: "",
-  constraintNoneMember: "",
-  constraintTotalLevel: "",
+  constraintHierarchyWorkbook: null,
+  constraintHierarchyRows: [],
+  constraintHierarchyHeaders: [],
+  constraintHierarchySheetName: "",
+  constraintHierarchyParentColumnNumber: null,
+  constraintHierarchyChildColumnNumber: null,
+  constraintHierarchyFileName: "",
   uploadedFileName: "",
   spellChecker: null,
   spellCheckerReady: false,
@@ -91,9 +95,10 @@ const spellOptionsWrap = document.getElementById("spellOptionsWrap");
 const spellColumnSelect = document.getElementById("spellColumnSelect");
 const reportColumnsLabel = document.getElementById("reportColumnsLabel");
 const constraintParamsWrap = document.getElementById("constraintParamsWrap");
-const constraintTopLevelInput = document.getElementById("constraintTopLevelInput");
-const constraintNoneMemberInput = document.getElementById("constraintNoneMemberInput");
-const constraintTotalLevelInput = document.getElementById("constraintTotalLevelInput");
+const constraintHierarchyFileInput = document.getElementById("constraintHierarchyFileInput");
+const constraintHierarchySheetSelect = document.getElementById("constraintHierarchySheetSelect");
+const constraintHierarchyParentColumnSelect = document.getElementById("constraintHierarchyParentColumnSelect");
+const constraintHierarchyChildColumnSelect = document.getElementById("constraintHierarchyChildColumnSelect");
 const spellScorecard = document.getElementById("spellScorecard");
 const scoreAllBtn = document.getElementById("scoreAllBtn");
 const scorePassBtn = document.getElementById("scorePassBtn");
@@ -115,6 +120,10 @@ parentColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 childColumnSelect?.addEventListener("change", handleHierarchyColumnChange);
 reportSelect?.addEventListener("change", handleReportTypeChange);
 exportExcelBtn?.addEventListener("click", exportCurrentReportToExcel);
+constraintHierarchyFileInput?.addEventListener("change", handleConstraintHierarchyFileUpload);
+constraintHierarchySheetSelect?.addEventListener("change", handleConstraintHierarchySheetChange);
+constraintHierarchyParentColumnSelect?.addEventListener("change", handleConstraintHierarchyColumnChange);
+constraintHierarchyChildColumnSelect?.addEventListener("change", handleConstraintHierarchyColumnChange);
 spellColumnSelect?.addEventListener("change", () => {
   let selectedOptions = [...spellColumnSelect.selectedOptions];
   if (isConstraintReportType(state.reportType) && selectedOptions.length > 1) {
@@ -133,27 +142,6 @@ spellColumnSelect?.addEventListener("change", () => {
     }
   });
   renderTable();
-});
-
-constraintTopLevelInput?.addEventListener("input", () => {
-  state.constraintTopLevel = constraintTopLevelInput.value;
-  if (isConstraintReportType(state.reportType)) {
-    renderTable();
-  }
-});
-
-constraintNoneMemberInput?.addEventListener("input", () => {
-  state.constraintNoneMember = constraintNoneMemberInput.value;
-  if (isConstraintReportType(state.reportType)) {
-    renderTable();
-  }
-});
-
-constraintTotalLevelInput?.addEventListener("input", () => {
-  state.constraintTotalLevel = constraintTotalLevelInput.value;
-  if (isConstraintReportType(state.reportType)) {
-    renderTable();
-  }
 });
 
 function setSpellStatusFilter(nextFilter) {
@@ -535,6 +523,154 @@ function handleHierarchyColumnChange() {
   state.parentColumnNumber = selectedParentColumn;
   state.childColumnNumber = selectedChildColumn;
   runQuery();
+}
+
+async function handleConstraintHierarchyFileUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  state.constraintHierarchyFileName = file.name;
+  state.constraintHierarchyWorkbook = null;
+  state.constraintHierarchyRows = [];
+  state.constraintHierarchyHeaders = [];
+  state.constraintHierarchySheetName = "";
+
+  try {
+    const data = await file.arrayBuffer();
+    state.constraintHierarchyWorkbook = XLSX.read(data, { type: "array", cellStyles: true });
+
+    if (!constraintHierarchySheetSelect) throw new Error("Constraint hierarchy sheet selector is unavailable.");
+
+    constraintHierarchySheetSelect.innerHTML = '<option value="">Select a sheet</option>';
+    state.constraintHierarchyWorkbook.SheetNames.forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      constraintHierarchySheetSelect.append(option);
+    });
+    constraintHierarchySheetSelect.disabled = false;
+
+    const firstSheet = state.constraintHierarchyWorkbook.SheetNames[0];
+    if (firstSheet) {
+      constraintHierarchySheetSelect.value = firstSheet;
+      await handleConstraintHierarchySheetChange();
+    }
+  } catch (error) {
+    state.constraintHierarchyWorkbook = null;
+    state.constraintHierarchyRows = [];
+    state.constraintHierarchyHeaders = [];
+    tableWrap.innerHTML = `<div class="empty">Unable to read constraint hierarchy workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
+  }
+
+  renderTable();
+}
+
+async function handleConstraintHierarchySheetChange() {
+  const sheetName = constraintHierarchySheetSelect?.value;
+  if (!sheetName || !state.constraintHierarchyWorkbook) return;
+
+  const worksheet = state.constraintHierarchyWorkbook.Sheets[sheetName];
+  const grid = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    defval: "",
+    raw: false,
+    blankrows: false
+  });
+
+  const headerRowIndex = findHeaderRowIndex(grid);
+  if (headerRowIndex < 0) {
+    state.constraintHierarchyRows = [];
+    state.constraintHierarchyHeaders = [];
+    renderTable();
+    return;
+  }
+
+  const headerRow = grid[headerRowIndex] || [];
+  const headerStartColumnIndex = 1;
+  const headers = headerRow
+    .slice(headerStartColumnIndex)
+    .map((h, i) => String(h ?? "").trim() || `Column ${headerStartColumnIndex + i + 1}`);
+
+  state.constraintHierarchyHeaders = headers;
+  state.constraintHierarchySheetName = sheetName;
+
+  if (constraintHierarchyParentColumnSelect && constraintHierarchyChildColumnSelect) {
+    const options = headers
+      .map((header, index) => {
+        const columnNumber = headerStartColumnIndex + index + 1;
+        return `<option value="${columnNumber}">Column ${columnNumber}: ${escapeHtml(header)}</option>`;
+      })
+      .join("");
+
+    constraintHierarchyParentColumnSelect.innerHTML = options;
+    constraintHierarchyChildColumnSelect.innerHTML = options;
+    const fallbackParent = Math.min(3, headerStartColumnIndex + headers.length);
+    const fallbackChild = Math.min(4, headerStartColumnIndex + headers.length);
+    state.constraintHierarchyParentColumnNumber = fallbackParent;
+    state.constraintHierarchyChildColumnNumber = fallbackChild;
+    constraintHierarchyParentColumnSelect.value = String(fallbackParent);
+    constraintHierarchyChildColumnSelect.value = String(fallbackChild);
+    constraintHierarchyParentColumnSelect.disabled = false;
+    constraintHierarchyChildColumnSelect.disabled = false;
+  }
+
+  state.constraintHierarchyRows = grid.slice(headerRowIndex + 1);
+  renderTable();
+}
+
+function handleConstraintHierarchyColumnChange() {
+  const parentColumn = Number(constraintHierarchyParentColumnSelect?.value);
+  const childColumn = Number(constraintHierarchyChildColumnSelect?.value);
+  if (!Number.isInteger(parentColumn) || !Number.isInteger(childColumn)) return;
+
+  state.constraintHierarchyParentColumnNumber = parentColumn;
+  state.constraintHierarchyChildColumnNumber = childColumn;
+  renderTable();
+}
+
+function buildConstraintHierarchyAncestorMap() {
+  if (
+    state.constraintHierarchyRows.length === 0 ||
+    !Number.isInteger(state.constraintHierarchyParentColumnNumber) ||
+    !Number.isInteger(state.constraintHierarchyChildColumnNumber)
+  ) {
+    return null;
+  }
+
+  const parentIdx = state.constraintHierarchyParentColumnNumber - 1;
+  const childIdx = state.constraintHierarchyChildColumnNumber - 1;
+  const parentsByChild = new Map();
+
+  state.constraintHierarchyRows.forEach((row) => {
+    const parent = normalizeHierarchyValue(row[parentIdx]).toLowerCase();
+    const child = normalizeHierarchyValue(row[childIdx]).toLowerCase();
+    if (!child) return;
+    if (!parentsByChild.has(child)) parentsByChild.set(child, new Set());
+    if (parent) parentsByChild.get(child).add(parent);
+  });
+
+  const ancestorMap = new Map();
+  const memo = new Map();
+
+  const getAncestors = (node, trail = new Set()) => {
+    if (memo.has(node)) return memo.get(node);
+    if (trail.has(node)) return new Set();
+    const nextTrail = new Set(trail);
+    nextTrail.add(node);
+    const directParents = parentsByChild.get(node) || new Set();
+    const all = new Set(directParents);
+    directParents.forEach((parent) => {
+      getAncestors(parent, nextTrail).forEach((ancestor) => all.add(ancestor));
+    });
+    memo.set(node, all);
+    return all;
+  };
+
+  parentsByChild.forEach((_value, child) => {
+    ancestorMap.set(child, getAncestors(child));
+  });
+
+  return { parentsByChild, ancestorMap };
 }
 
 function buildEntries(sourceRows) {
@@ -990,9 +1126,7 @@ function applyReportFilter(rows) {
 
   if (isConstraintReportType(state.reportType)) {
     const selectedHeader = selectedColumns[0];
-    const topLevel = normalizeHierarchyValue(state.constraintTopLevel).toLowerCase();
-    const noneMember = normalizeHierarchyValue(state.constraintNoneMember).toLowerCase();
-    const totalConstraintLevel = normalizeHierarchyValue(state.constraintTotalLevel).toLowerCase();
+    const hierarchyLookup = buildConstraintHierarchyAncestorMap();
     const rowById = new Map(rows.map((entry) => [entry.id, entry]));
     const issuesByRowId = new Map();
 
@@ -1001,19 +1135,19 @@ function applyReportFilter(rows) {
       issuesByRowId.get(rowId).add(message);
     };
 
-    if (!topLevel || !noneMember || !totalConstraintLevel) {
+    if (!hierarchyLookup) {
       rows.forEach((entry) => {
         const status = "Fail";
         statusByRowId.set(entry.id, status);
-        findingsByRowId.set(entry.id, ["Constraint parameters required: Top Level, None Member, and Total Constraint Level."]);
+        findingsByRowId.set(entry.id, ["Constraint hierarchy file, sheet, and parent/child columns are required."]);
       });
       failCount = rows.length;
     } else {
+      const { ancestorMap } = hierarchyLookup;
       const isAllowedParentConstraint = (baseConstraint, parentConstraint) => {
-        if (baseConstraint === noneMember) {
-          return parentConstraint === noneMember || parentConstraint === topLevel;
-        }
-        return parentConstraint === baseConstraint || parentConstraint === totalConstraintLevel || parentConstraint === topLevel;
+        if (!baseConstraint || !parentConstraint) return false;
+        if (parentConstraint === baseConstraint) return true;
+        return Boolean(ancestorMap.get(baseConstraint)?.has(parentConstraint));
       };
 
       const baseMembers = rows.filter((entry) => !rows.some((candidate) => candidate.parentId === entry.id));
@@ -1031,13 +1165,13 @@ function applyReportFilter(rows) {
           const parentConstraint = parentConstraintRaw.toLowerCase();
 
           if (!isAllowedParentConstraint(baseConstraint, parentConstraint)) {
+            const validParentList = [baseConstraintRaw || "(blank)", ...(ancestorMap.get(baseConstraint) || [])]
+              .filter(Boolean)
+              .map((value) => `"${value}"`)
+              .join(", ");
             addIssue(
               parentEntry.id,
-              `Base "${baseEntry.hierarchyLabel}" is "${baseConstraintRaw || "(blank)"}" but parent must be ${
-                baseConstraint === noneMember
-                  ? `"${state.constraintNoneMember}" or "${state.constraintTopLevel}"`
-                  : `"${baseConstraintRaw || "(blank)"}", "${state.constraintTotalLevel}", or "${state.constraintTopLevel}"`
-              }. Found "${parentConstraintRaw || "(blank)"}".`
+              `Base "${baseEntry.hierarchyLabel}" is "${baseConstraintRaw || "(blank)"}" but parent must be one of ${validParentList || "the mapped hierarchy values"}. Found "${parentConstraintRaw || "(blank)"}".`
             );
             addIssue(
               baseEntry.id,
@@ -1267,9 +1401,10 @@ function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
   }
 
   if (isConstraintReportType(reportType)) {
-    rows.push(["Enter Top Level", state.constraintTopLevel || ""]);
-    rows.push(["Enter None Member", state.constraintNoneMember || ""]);
-    rows.push(["Enter Total Constraint Level", state.constraintTotalLevel || ""]);
+    rows.push(["Constraint Hierarchy File", state.constraintHierarchyFileName || ""]);
+    rows.push(["Constraint Hierarchy Sheet", state.constraintHierarchySheetName || ""]);
+    rows.push(["Constraint Parent Column", state.constraintHierarchyParentColumnNumber ? `Column ${state.constraintHierarchyParentColumnNumber}` : ""]);
+    rows.push(["Constraint Child Column", state.constraintHierarchyChildColumnNumber ? `Column ${state.constraintHierarchyChildColumnNumber}` : ""]);
   }
 
   return rows;
