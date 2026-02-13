@@ -394,7 +394,7 @@ function populateReportColumns(sourceHeaders) {
 
 function syncReportParamVisibility() {
   if (!spellOptionsWrap || !spellScorecard) return;
-  const showColumnReport = state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType);
+  const showColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
   const isConstraintReport = isConstraintReportType(state.reportType);
   spellOptionsWrap.hidden = !showColumnReport;
   spellScorecard.hidden = !showColumnReport;
@@ -405,7 +405,9 @@ function syncReportParamVisibility() {
     reportColumnsLabel.textContent =
       state.reportType === "space"
         ? "Space Check columns (multi-select)"
-        : isConstraintReportType(state.reportType)
+        : state.reportType === "special-character"
+          ? "Special Character Review columns (multi-select)"
+          : isConstraintReportType(state.reportType)
           ? "Constraint Review column (single-select)"
           : "Spell check columns (multi-select)";
   }
@@ -449,6 +451,10 @@ function handleReportTypeChange() {
 
 function hasInternalSpace(value) {
   return /\s/.test(String(value ?? ""));
+}
+
+function hasSpecialCharacter(value) {
+  return /[^\p{L}\p{N}\s]/u.test(String(value ?? ""));
 }
 
 function handleHierarchyColumnChange() {
@@ -855,9 +861,22 @@ function evaluateSpaceRow(entry, selectedColumns) {
   return issues;
 }
 
+function evaluateSpecialCharacterRow(entry, selectedColumns) {
+  const issues = [];
+  selectedColumns.forEach((header) => {
+    const value = String(entry.row[header] ?? "");
+    if (!value) return;
+    if (hasSpecialCharacter(value)) {
+      issues.push(`${header}: contains special characters`);
+    }
+  });
+
+  return issues;
+}
+
 function applyReportFilter(rows) {
   const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  if ((state.reportType !== "spell" && state.reportType !== "space" && !isConstraintReportType(state.reportType)) || selectedColumns.length === 0) {
+  if ((state.reportType !== "spell" && state.reportType !== "space" && state.reportType !== "special-character" && !isConstraintReportType(state.reportType)) || selectedColumns.length === 0) {
     return {
       rows,
       findingsByRowId: new Map(),
@@ -948,7 +967,14 @@ function applyReportFilter(rows) {
     }
   } else {
     rows.forEach((entry) => {
-      const issues = state.reportType === "space" ? evaluateSpaceRow(entry, selectedColumns) : evaluateSpellRow(entry, selectedColumns);
+      let issues = [];
+      if (state.reportType === "space") {
+        issues = evaluateSpaceRow(entry, selectedColumns);
+      } else if (state.reportType === "special-character") {
+        issues = evaluateSpecialCharacterRow(entry, selectedColumns);
+      } else {
+        issues = evaluateSpellRow(entry, selectedColumns);
+      }
       const status = issues.length > 0 ? "Fail" : "Pass";
       statusByRowId.set(entry.id, status);
       if (issues.length > 0) {
@@ -978,7 +1004,7 @@ function renderTable() {
   state.statusByRowId = statusByRowId;
   state.selectedReportColumns = [...selectedColumns];
 
-  if (state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType)) {
+  if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
     updateScorecardButtons(passCount, failCount);
   }
 
@@ -990,7 +1016,9 @@ function renderTable() {
       ? `Spell check · ${selectedColumns.length} column(s)`
       : state.reportType === "space"
         ? `Space Check · ${selectedColumns.length} column(s)`
-        : isConstraintReportType(state.reportType)
+        : state.reportType === "special-character"
+          ? `Special Character Review · ${selectedColumns.length} column(s)`
+          : isConstraintReportType(state.reportType)
           ? `Constraint Review · ${selectedColumns.length} column selected`
           : "Review";
   state.reportSummary = reportSummary;
@@ -1004,10 +1032,10 @@ function renderTable() {
     <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const isColumnReport = state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType);
+  const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
   const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
-  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType);
-  const includeFindingsColumn = state.reportType === "spell" || state.reportType === "space";
+  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
+  const includeFindingsColumn = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character";
   const headerSet = isColumnReport
     ? includeStatusColumns
       ? includeFindingsColumn
@@ -1108,7 +1136,7 @@ function computeVisibleRows() {
 function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
   const rows = [["Selected Report Columns", reportColumns.join(", ") || "None"]];
 
-  if (reportType === "spell" || reportType === "space" || isConstraintReportType(reportType)) {
+  if (reportType === "spell" || reportType === "space" || reportType === "special-character" || isConstraintReportType(reportType)) {
     rows.push(["Status Filter", statusFilterLabel]);
   }
 
@@ -1144,16 +1172,16 @@ async function exportCurrentReportToExcel() {
 
     const selectedSheet = sheetSelect?.value || "";
     const reportColumns =
-      state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType)
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
         ? selectedColumns
         : state.headers.slice(1);
     const statusFilterLabel =
-      state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType)
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
         ? state.spellStatusFilter.toUpperCase()
         : "";
 
     const reportHeaders =
-      state.reportType === "spell" || state.reportType === "space"
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character"
         ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
         : isConstraintReportType(state.reportType)
           ? ["Hierarchy", "Status", ...reportColumns]
@@ -1161,10 +1189,10 @@ async function exportCurrentReportToExcel() {
 
     const tableRows = reportedRows.map((entry) => {
       const base = [entry.hierarchyPath || entry.hierarchyLabel];
-      if (state.reportType === "spell" || state.reportType === "space" || isConstraintReportType(state.reportType)) {
+      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
         base.push(statusByRowId.get(entry.id) || "Pass");
       }
-      if (state.reportType === "spell" || state.reportType === "space") {
+      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character") {
         base.push((findingsByRowId.get(entry.id) || []).join(" | "));
       }
       reportColumns.forEach((header) => {
