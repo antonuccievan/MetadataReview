@@ -44,7 +44,7 @@ const SPELL_CONFIDENCE_THRESHOLDS = {
 };
 
 function isConstraintReportType(reportType) {
-  return reportType === "constraint" || reportType === "constraint-v2";
+  return reportType === "constraint-v2";
 }
 
 const state = {
