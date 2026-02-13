@@ -162,11 +162,51 @@ function setSpellStatusFilter(nextFilter) {
 }
 
 scoreAllBtn?.addEventListener("click", () => setSpellStatusFilter("all"));
-scorePassBtn?.addEventListener("click", () => setSpellStatusFilter("pass"));
-scoreFailBtn?.addEventListener("click", () => setSpellStatusFilter("fail"));
+scorePassBtn?.addEventListener("click", () => setSpellStatusFilter(state.reportType === "case" ? "upper" : "pass"));
+scoreFailBtn?.addEventListener("click", () => setSpellStatusFilter(state.reportType === "case" ? "lower" : "fail"));
+
+const CASE_STATUS = {
+  upper: "Upper Case",
+  lower: "Lower Case",
+  proper: "Proper Case",
+  mixed: "Mixed Case"
+};
 
 function updateScorecardButtons(passCount, failCount) {
   if (!scoreAllBtn || !scorePassBtn || !scoreFailBtn) return;
+  if (state.reportType === "case") {
+    const counts = passCount || { upper: 0, lower: 0, proper: 0, mixed: 0, all: 0 };
+    scoreAllBtn.textContent = `All: ${counts.all}`;
+    scorePassBtn.textContent = `${CASE_STATUS.upper}: ${counts.upper}`;
+    scoreFailBtn.textContent = `${CASE_STATUS.lower}: ${counts.lower}`;
+
+    const properButtonId = "scoreProperBtn";
+    let scoreProperBtn = document.getElementById(properButtonId);
+    if (!scoreProperBtn && scoreFailBtn.parentElement) {
+      scoreProperBtn = document.createElement("button");
+      scoreProperBtn.type = "button";
+      scoreProperBtn.id = properButtonId;
+      scoreProperBtn.className = "score-btn";
+      scoreProperBtn.addEventListener("click", () => setSpellStatusFilter("proper"));
+      scoreFailBtn.parentElement.appendChild(scoreProperBtn);
+    }
+    if (scoreProperBtn) {
+      scoreProperBtn.textContent = `${CASE_STATUS.proper}: ${counts.proper}`;
+      scoreProperBtn.classList.toggle("active", state.spellStatusFilter === "proper");
+      scoreProperBtn.hidden = false;
+    }
+
+    scoreAllBtn.classList.toggle("active", state.spellStatusFilter === "all");
+    scorePassBtn.classList.toggle("active", state.spellStatusFilter === "upper");
+    scoreFailBtn.classList.toggle("active", state.spellStatusFilter === "lower");
+    return;
+  }
+
+  const scoreProperBtn = document.getElementById("scoreProperBtn");
+  if (scoreProperBtn) {
+    scoreProperBtn.hidden = true;
+  }
+
   scoreAllBtn.textContent = `All: ${passCount + failCount}`;
   scorePassBtn.textContent = `Pass: ${passCount}`;
   scoreFailBtn.textContent = `Fail: ${failCount}`;
@@ -394,7 +434,7 @@ function populateReportColumns(sourceHeaders) {
 
 function syncReportParamVisibility() {
   if (!spellOptionsWrap || !spellScorecard) return;
-  const showColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
+  const showColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
   const isConstraintReport = isConstraintReportType(state.reportType);
   spellOptionsWrap.hidden = !showColumnReport;
   spellScorecard.hidden = !showColumnReport;
@@ -405,7 +445,9 @@ function syncReportParamVisibility() {
     reportColumnsLabel.textContent =
       state.reportType === "space"
         ? "Space Check columns (multi-select)"
-        : state.reportType === "special-character"
+        : state.reportType === "case"
+          ? "Case Review columns (multi-select)"
+          : state.reportType === "special-character"
           ? "Special Character Review columns (multi-select)"
           : isConstraintReportType(state.reportType)
           ? "Constraint Review column (single-select)"
@@ -421,6 +463,10 @@ function syncReportParamVisibility() {
 function handleReportTypeChange() {
   if (!reportSelect) return;
   state.reportType = reportSelect.value;
+  if (state.reportType !== "case" && ["upper", "lower", "proper"].includes(state.spellStatusFilter)) {
+    state.spellStatusFilter = "all";
+  }
+
   if (state.reportType === "review") {
     state.spellStatusFilter = "all";
     state.reportColumns.clear();
@@ -429,6 +475,8 @@ function handleReportTypeChange() {
         option.selected = false;
       });
     }
+  } else if (state.reportType === "case") {
+    state.spellStatusFilter = "all";
   } else if (isConstraintReportType(state.reportType)) {
     const selectedOptions = spellColumnSelect ? [...spellColumnSelect.selectedOptions] : [];
     const targetOption = selectedOptions[selectedOptions.length - 1] || spellColumnSelect?.options[0] || null;
@@ -455,6 +503,25 @@ function hasInternalSpace(value) {
 
 function hasSpecialCharacter(value) {
   return /[^\p{L}\p{N}\s]/u.test(String(value ?? ""));
+}
+
+function detectCaseType(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  const lettersOnly = text.replace(/[^A-Za-z]/g, "");
+  if (!lettersOnly) return null;
+
+  if (lettersOnly === lettersOnly.toUpperCase()) return CASE_STATUS.upper;
+  if (lettersOnly === lettersOnly.toLowerCase()) return CASE_STATUS.lower;
+
+  const words = text.match(/[A-Za-z]+/g) || [];
+  const isProper = words.length > 0 && words.every((word) => {
+    const first = word.charAt(0);
+    const rest = word.slice(1);
+    return first === first.toUpperCase() && rest === rest.toLowerCase();
+  });
+  return isProper ? CASE_STATUS.proper : CASE_STATUS.mixed;
 }
 
 function handleHierarchyColumnChange() {
@@ -874,9 +941,37 @@ function evaluateSpecialCharacterRow(entry, selectedColumns) {
   return issues;
 }
 
+function evaluateCaseRow(entry, selectedColumns) {
+  const findings = [];
+  const statuses = [];
+
+  selectedColumns.forEach((header) => {
+    const value = String(entry.row[header] ?? "");
+    if (!value.trim()) return;
+
+    const detectedCase = detectCaseType(value);
+    if (!detectedCase) return;
+    statuses.push(detectedCase);
+    findings.push(`${header}: ${detectedCase}`);
+  });
+
+  let status = CASE_STATUS.proper;
+  if (statuses.length > 0) {
+    status = statuses.every((value) => value === CASE_STATUS.upper)
+      ? CASE_STATUS.upper
+      : statuses.every((value) => value === CASE_STATUS.lower)
+        ? CASE_STATUS.lower
+        : statuses.every((value) => value === CASE_STATUS.proper)
+          ? CASE_STATUS.proper
+          : CASE_STATUS.mixed;
+  }
+
+  return { findings, status };
+}
+
 function applyReportFilter(rows) {
   const selectedColumns = [...state.reportColumns].filter((header) => state.sourceHeaders.includes(header));
-  if ((state.reportType !== "spell" && state.reportType !== "space" && state.reportType !== "special-character" && !isConstraintReportType(state.reportType)) || selectedColumns.length === 0) {
+  if ((state.reportType !== "spell" && state.reportType !== "space" && state.reportType !== "case" && state.reportType !== "special-character" && !isConstraintReportType(state.reportType)) || selectedColumns.length === 0) {
     return {
       rows,
       findingsByRowId: new Map(),
@@ -891,6 +986,7 @@ function applyReportFilter(rows) {
   const statusByRowId = new Map();
   let passCount = 0;
   let failCount = 0;
+  const caseCounts = { upper: 0, lower: 0, proper: 0, mixed: 0, all: 0 };
 
   if (isConstraintReportType(state.reportType)) {
     const selectedHeader = selectedColumns[0];
@@ -968,18 +1064,33 @@ function applyReportFilter(rows) {
   } else {
     rows.forEach((entry) => {
       let issues = [];
+      let rowStatus = "Pass";
       if (state.reportType === "space") {
         issues = evaluateSpaceRow(entry, selectedColumns);
+        rowStatus = issues.length > 0 ? "Fail" : "Pass";
+      } else if (state.reportType === "case") {
+        const caseEvaluation = evaluateCaseRow(entry, selectedColumns);
+        issues = caseEvaluation.findings;
+        rowStatus = caseEvaluation.status;
+        caseCounts.all += 1;
+        if (rowStatus === CASE_STATUS.upper) caseCounts.upper += 1;
+        if (rowStatus === CASE_STATUS.lower) caseCounts.lower += 1;
+        if (rowStatus === CASE_STATUS.proper) caseCounts.proper += 1;
+        if (rowStatus === CASE_STATUS.mixed) caseCounts.mixed += 1;
       } else if (state.reportType === "special-character") {
         issues = evaluateSpecialCharacterRow(entry, selectedColumns);
+        rowStatus = issues.length > 0 ? "Fail" : "Pass";
       } else {
         issues = evaluateSpellRow(entry, selectedColumns);
+        rowStatus = issues.length > 0 ? "Fail" : "Pass";
       }
-      const status = issues.length > 0 ? "Fail" : "Pass";
+      const status = rowStatus;
       statusByRowId.set(entry.id, status);
-      if (issues.length > 0) {
+      if (issues.length > 0 && state.reportType !== "case") {
         findingsByRowId.set(entry.id, issues);
         failCount += 1;
+      } else if (state.reportType === "case") {
+        findingsByRowId.set(entry.id, issues);
       } else {
         passCount += 1;
       }
@@ -988,12 +1099,25 @@ function applyReportFilter(rows) {
 
   const filteredRows = rows.filter((entry) => {
     const status = statusByRowId.get(entry.id);
+    if (state.reportType === "case") {
+      if (state.spellStatusFilter === "upper") return status === CASE_STATUS.upper;
+      if (state.spellStatusFilter === "lower") return status === CASE_STATUS.lower;
+      if (state.spellStatusFilter === "proper") return status === CASE_STATUS.proper;
+      return true;
+    }
     if (state.spellStatusFilter === "pass") return status === "Pass";
     if (state.spellStatusFilter === "fail") return status === "Fail";
     return true;
   });
 
-  return { rows: filteredRows, findingsByRowId, statusByRowId, passCount, failCount, selectedColumns };
+  return {
+    rows: filteredRows,
+    findingsByRowId,
+    statusByRowId,
+    passCount: state.reportType === "case" ? caseCounts : passCount,
+    failCount,
+    selectedColumns
+  };
 }
 
 function renderTable() {
@@ -1004,7 +1128,7 @@ function renderTable() {
   state.statusByRowId = statusByRowId;
   state.selectedReportColumns = [...selectedColumns];
 
-  if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
+  if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
     updateScorecardButtons(passCount, failCount);
   }
 
@@ -1016,6 +1140,8 @@ function renderTable() {
       ? `Spell check · ${selectedColumns.length} column(s)`
       : state.reportType === "space"
         ? `Space Check · ${selectedColumns.length} column(s)`
+        : state.reportType === "case"
+          ? `Case Review · ${selectedColumns.length} column(s)`
         : state.reportType === "special-character"
           ? `Special Character Review · ${selectedColumns.length} column(s)`
           : isConstraintReportType(state.reportType)
@@ -1032,10 +1158,10 @@ function renderTable() {
     <span>Report: <strong>${escapeHtml(reportSummary)}</strong></span>
   `;
 
-  const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
+  const isColumnReport = state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
   const sourceHeaders = isColumnReport ? selectedColumns : state.headers.slice(1);
-  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
-  const includeFindingsColumn = state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character";
+  const includeStatusColumns = state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType);
+  const includeFindingsColumn = state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character";
   const headerSet = isColumnReport
     ? includeStatusColumns
       ? includeFindingsColumn
@@ -1067,7 +1193,7 @@ function renderTable() {
 
       const findingCell = !includeFindingsColumn ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      const statusCell = !includeStatusColumns ? "" : `<td>${statusByRowId.get(entry.id) || "Pass"}</td>`;
+      const statusCell = !includeStatusColumns ? "" : `<td>${statusByRowId.get(entry.id) || (state.reportType === "case" ? CASE_STATUS.proper : "Pass")}</td>`;
 
       const rowCells = sourceHeaders
         .map((header) => {
@@ -1136,7 +1262,7 @@ function computeVisibleRows() {
 function getReportParameterRows(reportType, reportColumns, statusFilterLabel) {
   const rows = [["Selected Report Columns", reportColumns.join(", ") || "None"]];
 
-  if (reportType === "spell" || reportType === "space" || reportType === "special-character" || isConstraintReportType(reportType)) {
+  if (reportType === "spell" || reportType === "space" || reportType === "case" || reportType === "special-character" || isConstraintReportType(reportType)) {
     rows.push(["Status Filter", statusFilterLabel]);
   }
 
@@ -1172,16 +1298,16 @@ async function exportCurrentReportToExcel() {
 
     const selectedSheet = sheetSelect?.value || "";
     const reportColumns =
-      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
         ? selectedColumns
         : state.headers.slice(1);
     const statusFilterLabel =
-      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType)
         ? state.spellStatusFilter.toUpperCase()
         : "";
 
     const reportHeaders =
-      state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character"
+      state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character"
         ? ["Hierarchy", "Status", "Report Findings", ...reportColumns]
         : isConstraintReportType(state.reportType)
           ? ["Hierarchy", "Status", ...reportColumns]
@@ -1189,10 +1315,10 @@ async function exportCurrentReportToExcel() {
 
     const tableRows = reportedRows.map((entry) => {
       const base = [entry.hierarchyPath || entry.hierarchyLabel];
-      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
-        base.push(statusByRowId.get(entry.id) || "Pass");
+      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character" || isConstraintReportType(state.reportType)) {
+        base.push(statusByRowId.get(entry.id) || (state.reportType === "case" ? CASE_STATUS.proper : "Pass"));
       }
-      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "special-character") {
+      if (state.reportType === "spell" || state.reportType === "space" || state.reportType === "case" || state.reportType === "special-character") {
         base.push((findingsByRowId.get(entry.id) || []).join(" | "));
       }
       reportColumns.forEach((header) => {
