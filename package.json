@@ -1,0 +1,22 @@
+{
+  "name": "metadatareview",
+  "version": "1.0.0",
+  "description": "A lightweight browser interface for reviewing metadata exported to Excel.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:64681/git/antonuccievan/MetadataReview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "dictionary-en-us": "^3.0.0",
+    "typo-js": "^1.2.5",
+    "xlsx": "^0.18.5"
+  }
+}
