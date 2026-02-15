@@ -262,7 +262,7 @@ function setExportButtonLoading(loading) {
     return;
   }
 
-  exportExcelBtn.innerHTML = "📤 Export Report to Excel";
+  exportExcelBtn.innerHTML = "Export Report to Excel";
   exportExcelBtn.removeAttribute("aria-busy");
   exportExcelBtn.disabled = state.filteredRows.length === 0;
 }
@@ -325,7 +325,10 @@ function applyTheme(theme) {
   const icon = theme === "dark" ? "🌙" : "☀️";
   const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   if (!themeToggleBtn) return;
-  themeToggleBtn.textContent = `${icon} ${theme === "dark" ? "Dark" : "Light"}`;
+  const iconEl = themeToggleBtn.querySelector(".theme-icon");
+  const labelEl = themeToggleBtn.querySelector(".theme-label");
+  if (iconEl) iconEl.textContent = icon;
+  if (labelEl) labelEl.textContent = theme === "dark" ? "Dark" : "Light";
   themeToggleBtn.setAttribute("aria-label", label);
   themeToggleBtn.setAttribute("title", label);
 }
@@ -359,11 +362,11 @@ async function handleFileUpload(event) {
       await loadSheetRows();
     } else {
       setLoading(false);
-      tableWrap.innerHTML = '<div class="empty">Workbook contains no sheets.</div>';
+      tableWrap.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">&#x1F4C2;</span>Workbook contains no sheets.</div>';
     }
   } catch (error) {
     setLoading(false);
-    tableWrap.innerHTML = `<div class="empty">Unable to read workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
+    tableWrap.innerHTML = `<div class="empty"><span class="empty-icon" aria-hidden="true">&#x26A0;</span>Unable to read workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
   }
 }
 
@@ -559,7 +562,7 @@ async function handleConstraintHierarchyFileUpload(event) {
     state.constraintHierarchyWorkbook = null;
     state.constraintHierarchyRows = [];
     state.constraintHierarchyHeaders = [];
-    tableWrap.innerHTML = `<div class="empty">Unable to read constraint hierarchy workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
+    tableWrap.innerHTML = `<div class="empty"><span class="empty-icon" aria-hidden="true">&#x26A0;</span>Unable to read constraint hierarchy workbook: ${escapeHtml(error?.message || "unknown error")}</div>`;
   }
 
   renderTable();
@@ -720,14 +723,14 @@ async function loadSheetRows() {
 
     if (grid.length === 0) {
       setLoading(false);
-      tableWrap.innerHTML = '<div class="empty">The selected sheet is empty.</div>';
+      tableWrap.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">&#x1F4AD;</span>The selected sheet is empty.</div>';
       return;
     }
 
     const headerRowIndex = findHeaderRowIndex(grid);
     if (headerRowIndex < 0) {
       setLoading(false);
-      tableWrap.innerHTML = '<div class="empty">No header row found: column B is empty for all rows.</div>';
+      tableWrap.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">&#x1F50D;</span>No header row found: column B is empty for all rows.</div>';
       return;
     }
 
@@ -745,7 +748,7 @@ async function loadSheetRows() {
 
     if (sourceHeaders.length === 0) {
       setLoading(false);
-      tableWrap.innerHTML = '<div class="empty">The selected sheet has no columns after column B.</div>';
+      tableWrap.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">&#x1F4AD;</span>The selected sheet has no columns after column B.</div>';
       return;
     }
 
@@ -783,7 +786,7 @@ async function loadSheetRows() {
     runQuery();
   } catch (error) {
     setLoading(false);
-    tableWrap.innerHTML = `<div class="empty">Unable to process sheet: ${escapeHtml(error?.message || "unknown error")}</div>`;
+    tableWrap.innerHTML = `<div class="empty"><span class="empty-icon" aria-hidden="true">&#x26A0;</span>Unable to process sheet: ${escapeHtml(error?.message || "unknown error")}</div>`;
   }
 }
 
@@ -1343,7 +1346,16 @@ function renderTable() {
 
       const findingCell = !includeFindingsColumn ? "" : `<td>${escapeHtml((state.findingsByRowId.get(entry.id) || []).join(" | "))}</td>`;
 
-      const statusCell = !includeStatusColumns ? "" : `<td>${statusByRowId.get(entry.id) || (state.reportType === "case" ? CASE_STATUS.proper : "Pass")}</td>`;
+      const statusCell = !includeStatusColumns ? "" : (() => {
+        const statusValue = statusByRowId.get(entry.id) || (state.reportType === "case" ? CASE_STATUS.proper : "Pass");
+        const badgeClass = statusValue === "Pass" ? "status-badge--pass"
+          : statusValue === "Fail" ? "status-badge--fail"
+          : "status-badge--neutral";
+        const dotClass = statusValue === "Pass" ? "status-dot--pass"
+          : statusValue === "Fail" ? "status-dot--fail"
+          : "status-dot--neutral";
+        return `<td><span class="status-badge ${badgeClass}"><span class="status-dot ${dotClass}"></span>${escapeHtml(statusValue)}</span></td>`;
+      })();
 
       const rowCells = sourceHeaders
         .map((header) => {
@@ -1362,7 +1374,7 @@ function renderTable() {
   tableWrap.innerHTML = `
     <table>
       <thead><tr>${headerCells}</tr></thead>
-      <tbody>${bodyRows || `<tr><td colspan="${headerSet.length}"><div class="empty">No rows match the active report filters.</div></td></tr>`}</tbody>
+      <tbody>${bodyRows || `<tr><td colspan="${headerSet.length}"><div class="empty"><span class="empty-icon" aria-hidden="true">&#x1F50D;</span>No rows match the active report filters.</div></td></tr>`}</tbody>
     </table>
   `;
 
@@ -1501,7 +1513,7 @@ async function exportCurrentReportToExcel() {
     const exportFileName = `${safeFileName}-${state.reportType}-export-${exportedAtFileSegment}.xlsx`;
     XLSX.writeFile(workbook, exportFileName);
   } catch (error) {
-    tableWrap.innerHTML = `<div class="empty">Unable to export report: ${escapeHtml(error?.message || "unknown error")}</div>`;
+    tableWrap.innerHTML = `<div class="empty"><span class="empty-icon" aria-hidden="true">&#x26A0;</span>Unable to export report: ${escapeHtml(error?.message || "unknown error")}</div>`;
   } finally {
     if (showSpinnerTimer) clearTimeout(showSpinnerTimer);
     setExportButtonLoading(false);
